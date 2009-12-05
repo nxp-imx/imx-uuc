@@ -1,0 +1,8 @@
+#!/bin/sh
+#mkdir /sys /proc
+mount -t sysfs none /sys
+mount -t proc none /proc
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+echo "Starting UTP"
+cd /home
+/usr/bin/uuc

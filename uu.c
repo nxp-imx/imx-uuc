@@ -1,7 +1,7 @@
 /*
- * iMX233 Boot Prep
+ * iMX233 utp decode program
  *
- * Copyright 2008-2009 Freescale Semiconductor
+ * Copyright 2008-2010 Freescale Semiconductor
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,13 @@
 #pragma pack(1)
 
 #define PACKAGE "uuc"
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 char *utp_firmware_version = "2.6.26";
 char *utp_sn = "000000000000";
 char *utp_chipid = "370000A5";
 
-/* 
+/*
  * this structure should be in sync with the same in
  * $KERNEL/drivers/usb/gadget/stmp_updater.c
  */
@@ -174,7 +174,7 @@ static int utp_partition_mmc(char *disk)
 
 	sprintf(shell_cmd, "fdisk %s", disk);
 	fdisk_f = popen(shell_cmd, "w");
-	if (fdisk_f < 0) 
+	if (fdisk_f < 0)
 		return errno;
 
 	fdisk = fileno(fdisk_f);
@@ -215,9 +215,9 @@ static int utp_do_selftest(void)
 static int utp_can_busy(char *command)
 {
 	char *async[] ={
-		"?", "!", "send", "read", 
-		"wrf", "wff", "wfs", "wrs", 
-		"untar.", NULL,
+		"?", "!", "send", "read",
+		"wrf", "wff", "wfs", "wrs",
+		"untar.","pipe", NULL,
 	};
 	char **aptr;
 
@@ -298,11 +298,11 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	if (utp_can_busy(cmd))
 		utp_send_busy(u);
 
-	if (strcmp(cmd, "?") == 0) {				
+	if (strcmp(cmd, "?") == 0) {
 		/* query */
 		flags = UTP_FLAG_DATA;
 		data = malloc(256);
-		sprintf(data, 
+		sprintf(data,
 			"<DEVICE>\n"
 			" <FW>%s</FW>\n"
 			" <DCE>%s</DCE>\n"
@@ -339,7 +339,7 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	else if (strcmp(cmd, "fff") == 0) {
 		/* perform actual flashing of the firmware to the NAND */
 		utp_flush();
-		if (utp_mk_devnode("class/mtd", "mtd1", "/dev/mtd1", S_IFCHR) >= 0 && 
+		if (utp_mk_devnode("class/mtd", "mtd1", "/dev/mtd1", S_IFCHR) >= 0 &&
   		    utp_mk_devnode("class/mtd", "mtd0", "/dev/mtd0", S_IFCHR) >= 0) {
 			utp_run("kobs-ng -v -d %s", UTP_TARGET_FILE);
 		}
@@ -402,6 +402,12 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 
 		/* then start ubiformat and redirect its input */
 		status = utp_pipe("ubiformat %s -f - -S %lld", devnode, payload);
+		if (status)
+			flags = UTP_FLAG_STATUS;
+	}
+
+	else if (strncmp(cmd, "pipe", 4) == 0) {
+		status = utp_pipe(cmd + 5);
 		if (status)
 			flags = UTP_FLAG_STATUS;
 	}
@@ -537,7 +543,7 @@ int main(void)
 		}
 
 		else if (uc->flags & UTP_FLAG_DATA) {
-			printf("UTP: data, %d bytes\n", uc->bufsize);
+			/*printf("UTP: data, %d bytes\n", uc->bufsize);*/
 			write(utp_file, uc->data, uc->bufsize);
 		}
 

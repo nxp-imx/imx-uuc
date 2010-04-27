@@ -7,6 +7,8 @@ echo "Starting UTP"
 cd /home
 #disable turn off display
 mknod /dev/tty0 c 4 0
+#get up-to-date mount information
+ln -s /proc/mounts /etc/mtab
 echo "disable turn off display"
 echo -e "\033[9;0]" > /dev/tty0
 /usr/bin/uuc

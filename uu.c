@@ -522,7 +522,7 @@ int main(void)
 
 	setenv("FILE", UTP_TARGET_FILE, !0);
 
-	utp_run("modprobe g_file_storage");
+//	utp_run("modprobe g_file_storage");
 
 	printf("UTP: Waiting for device to appear\n");
 	while (utp_mk_devnode("class/misc", "utp", UTP_DEVNODE, S_IFCHR) < 0) {

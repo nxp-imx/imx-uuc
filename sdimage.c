@@ -186,4 +186,5 @@ int main(int argc, char **argv)
 	close(devhandle);
 	close(firmwarehandle);
 	printf("done\r\n");
+	return 0;
 }

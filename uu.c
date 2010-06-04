@@ -1,5 +1,5 @@
 /*
- * iMX233 utp decode program
+ * iMX233/28 utp decode program
  *
  * Copyright 2008-2010 Freescale Semiconductor
  *
@@ -19,8 +19,8 @@
  */
 
 #define _GNU_SOURCE
-//#include "config.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <syscall.h>
 #include <stdint.h>
@@ -31,8 +31,9 @@
 #include <malloc.h>
 #include <errno.h>
 #include <stdarg.h>
-
-#define UTP_DEVNODE 	"/tmp/utp"
+#include <sys/wait.h>
+#include <signal.h>
+#define UTP_DEVNODE 	"/dev/utp"
 #define UTP_TARGET_FILE	"/tmp/file.utp"
 
 #define UTP_FLAG_COMMAND	0x00000001
@@ -40,18 +41,19 @@
 #define UTP_FLAG_STATUS		0x00000004
 #define UTP_FLAG_REPORT_BUSY	0x10000000
 
+
 #pragma pack(1)
 
 #define PACKAGE "uuc"
-#define VERSION "0.2"
+#define VERSION "0.3"
 
-char *utp_firmware_version = "2.6.26";
+char *utp_firmware_version = "2.6.31";
 char *utp_sn = "000000000000";
 char *utp_chipid = "370000A5";
-
+//#define NEED_TO_GET_CHILD_PID 1
 /*
  * this structure should be in sync with the same in
- * $KERNEL/drivers/usb/gadget/stmp_updater.c
+ * $KERNEL/drivers/usb/gadget/fsl_updater.c
  */
 struct utp_message {
 	uint32_t flags;
@@ -70,8 +72,8 @@ struct utp_message {
 };
 #pragma pack()
 
-int utp_file = -1;
-FILE *utp_file_f;
+static int utp_file = -1;
+static FILE *utp_file_f = NULL;
 
 static inline char *utp_answer_type(struct utp_message *u)
 {
@@ -211,40 +213,124 @@ static int utp_do_selftest(void)
 	printf("UTP: Self-testing\n");
 	return 0;
 }
-
+/*
+ * Put the command which needs to send busy first
+ * And the host will send poll for getting its return value
+ * later, we call these kinds of commands as Asynchronous Commands.
+ */
 static int utp_can_busy(char *command)
 {
 	char *async[] ={
-		"?", "!", "send", "read",
-		"wrf", "wff", "wfs", "wrs",
-		"untar.","pipe", NULL,
+		"$ ", NULL,
 	};
-	char **aptr;
+	char **ptr;
 
-	aptr = async;
-	while (*aptr) {
-		if (strncmp(command, *aptr, strlen(*aptr)) == 0)
-			return 0;
-		aptr++;
+	ptr = async;
+	while (*ptr) {
+		if (strncmp(command, *ptr, strlen(*ptr)) == 0)
+			return 1;
+		ptr++;
 	}
-	return 1;
+	return 0;
 }
-
-static void utp_flush(void)
+#ifdef NEED_TO_GET_CHILD_PID
+/* for pipe */
+#define READ 0
+#define WRITE 1
+static pid_t child_pid = -1;
+static int utp_flush(void)
 {
+	int ret, pstat;
+	pid_t pid;
+	if (utp_file) {
+		fflush(NULL);
+		ret = close(utp_file);
+		do{
+			pid = waitpid(child_pid, &pstat, 0); /* wait for child finished */
+		}while (pid == -1 && errno == EINTR);
+		printf("UTP: closing the file\n");
+	}
+	utp_file = 0;
+	return ret;
+}
+pid_t popen2(const char *command, int *infp, int *outfp)
+{
+	int p_stdin[2], p_stdout[2];
+	pid_t pid;
+
+	if (pipe(p_stdin) != 0 || pipe(p_stdout) != 0)
+		return -1;
+
+	pid = fork();
+
+	if (pid < 0)
+		return pid;
+	else if (pid == 0){
+		close(p_stdin[WRITE]);
+		if (infp == NULL)
+			close(p_stdin[READ]);
+		else
+			dup2(p_stdin[READ], READ);
+		close(p_stdout[READ]);
+		if (outfp == NULL)
+			close(p_stdout[WRITE]);
+		else
+			dup2(p_stdout[WRITE], WRITE);
+
+		execl("/bin/sh", "sh", "-c", command, NULL);
+		perror("execl");
+		exit(1);
+	}
+
+	if (infp == NULL)
+		close(p_stdin[WRITE]);
+	else
+		*infp = p_stdin[WRITE];
+
+	if (outfp == NULL)
+		close(p_stdout[READ]);
+	else
+		*outfp = p_stdout[READ];
+
+	close(p_stdin[READ]);
+	close(p_stdout[WRITE]);
+	return pid;
+}
+int utp_pipe(char *command, ... )
+{
+	int r, infp;
+	char shell_cmd[1024];
+	va_list vptr;
+	va_start(vptr, command);
+	vsnprintf(shell_cmd, sizeof(shell_cmd), command, vptr);
+	va_end(vptr);
+
+	child_pid = popen2(shell_cmd, &infp, NULL);
+	if (child_pid < 0){
+		printf("the fork is failed \n");
+		return -1;
+	}
+	utp_file = infp;
+	printf("pid is %d, UTP: executing \"%s\"\n",child_pid, shell_cmd);
+	return 0;
+}
+#else
+static int utp_flush(void)
+{
+	int ret;
 	if (utp_file_f) {
 		printf("UTP: waiting for pipe to close\n");
-		pclose(utp_file_f);
+		ret = pclose(utp_file_f);
 	}
 	else if (utp_file) {
 		printf("UTP: closing the file\n");
-		close(utp_file);
+		ret = close(utp_file);
 	}
 	utp_file_f = NULL;
 	utp_file = 0;
 	printf("UTP: files were flushed.\n");
+	return ret;
 }
-
 static int utp_pipe(char *command, ... )
 {
 	int r;
@@ -261,7 +347,7 @@ static int utp_pipe(char *command, ... )
 
 	return utp_file_f ? 0 : errno;
 }
-
+#endif
 /*
  * utp_handle_command
  *
@@ -294,9 +380,10 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	flags = 0;
 	size = 0;
 
-	/* these are synchronous or does not require any answer */
-	if (utp_can_busy(cmd))
+	/* these are asynchronous commands and need to send busy */
+	if (utp_can_busy(cmd)){
 		utp_send_busy(u);
+	}
 
 	if (strcmp(cmd, "?") == 0) {
 		/* query */
@@ -324,13 +411,10 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	}
 
 	else if (strncmp(cmd, "$ ", 2) == 0) {
-		utp_run(cmd + 2);
+		status = utp_run(cmd + 2);
+		if (status)
+			flags = UTP_FLAG_STATUS;
 	}
-
-	else if (strcmp(cmd, "flush") == 0) {
-		utp_flush();
-	}
-
 	else if ((strcmp(cmd,"wff") == 0) || (strcmp(cmd, "wfs") == 0)) {
 		/* Write firmware - to flash or to SD, no matter */
 		utp_file = open(UTP_TARGET_FILE, O_CREAT | O_TRUNC | O_WRONLY, 0666);
@@ -433,8 +517,9 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 
 	else if (strcmp(cmd, "frf") == 0 || strcmp(cmd, "frs") == 0) {
 		/* perform actual flashing of the rootfs to the NAND/SD */
-		utp_flush();
-		/* done :) */
+		status = utp_flush();
+		if (status)
+			flags = UTP_FLAG_STATUS;
 	}
 
 	else if (strncmp(cmd, "untar.", 6) == 0) {
@@ -442,7 +527,6 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 		if (status)
 			flags = UTP_FLAG_STATUS;
 	}
-
 
 	else if (strncmp(cmd, "read", 4) == 0) {
 		f = open(cmd + 5, O_RDONLY);
@@ -476,14 +560,14 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 
 	else if (strcmp(cmd, "selftest") == 0) {
 		status = utp_do_selftest();
-		if (status != 0)
+		if (status)
 			flags = UTP_FLAG_STATUS;
 	}
 
 	else {
 		printf("UTP: Unknown command, ignored\n");
 		flags = UTP_FLAG_STATUS;
-		status = EINVAL;
+		status = -EINVAL;
 	}
 
 	w = malloc(size + sizeof(*w));
@@ -505,24 +589,57 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 		free(data);
 	return w;
 }
+#if 0
+/*
+ * Check the process is dead
+ */
+#define NAME_MAX 30
+int is_child_dead(void)
+{
+	FILE *fh;
+	char path[NAME_MAX + 1];
+	sprintf(path, "/proc/%u/status", (unsigned int)child_pid);
+	if ((fh = fopen(path, "r"))){
+		char buf[1024];
+		while (fgets(buf, sizeof(buf) -1, fh)){
+			if (!strncmp(buf, "State:", 6))
+			{
+				char *p = buf + 6;
+				while (*p == '\t'){
+					p++;
+					continue;
+				}
+				if (*p == 'Z'){
+					fclose(fh);
+					return 1;
+				}
+				break;
+			}
+		}
+	}
+	else{
+		printf("can't open %s, maybe the process %u has killed already\n",path,child_pid);
+		return 1;
+	}
 
+	fclose(fh);
+	return 0;
+}
+#endif
 int main(void)
 {
 	int u = -1, r;
 	struct utp_message *uc, *answer;
 	char env[256];
 
-	setvbuf(stdout, NULL, _IONBF, 0);
-
 	printf("%s %s [built %s %s]\n", PACKAGE, VERSION, __DATE__, __TIME__);
-
+	/* set stdout unbuffered, what is the usage??? */
+//	setvbuf(stdout, NULL, _IONBF, 0);
 	uc = malloc(sizeof(*uc) + 0x10000);
 
 	mkdir("/tmp", 0777);
 
 	setenv("FILE", UTP_TARGET_FILE, !0);
-
-//	utp_run("modprobe g_file_storage");
 
 	printf("UTP: Waiting for device to appear\n");
 	while (utp_mk_devnode("class/misc", "utp", UTP_DEVNODE, S_IFCHR) < 0) {
@@ -540,18 +657,14 @@ int main(void)
 				write(u, answer, answer->size);
 				free(answer);
 			}
-		}
-
-		else if (uc->flags & UTP_FLAG_DATA) {
-			/*printf("UTP: data, %d bytes\n", uc->bufsize);*/
+		}else if (uc->flags & UTP_FLAG_DATA) {
 			write(utp_file, uc->data, uc->bufsize);
-		}
-
-		else {
+		}else {
 			printf("UTP: Unknown flag %x\n", uc->flags);
 		}
 	}
 
-	/* return 0; */
+	/* should never be here */
+	return 0;
 }
 

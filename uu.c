@@ -33,6 +33,12 @@
 #include <stdarg.h>
 #include <sys/wait.h>
 #include <signal.h>
+
+/* mxc SoC will enable watchdog at USB recovery mode
+ * so, the user must service watchdog
+ */
+#include <linux/watchdog.h>
+
 #define UTP_DEVNODE 	"/dev/utp"
 #define UTP_TARGET_FILE	"/tmp/file.utp"
 
@@ -45,7 +51,7 @@
 #pragma pack(1)
 
 #define PACKAGE "uuc"
-#define VERSION "0.3"
+#define VERSION "0.4"
 
 char *utp_firmware_version = "2.6.31";
 char *utp_sn = "000000000000";
@@ -210,7 +216,6 @@ static int utp_partition_mmc(char *disk)
  */
 static int utp_do_selftest(void)
 {
-	printf("UTP: Self-testing\n");
 	return 0;
 }
 /*
@@ -341,7 +346,6 @@ static int utp_pipe(char *command, ... )
 	vsnprintf(shell_cmd, sizeof(shell_cmd), command, vptr);
 	va_end(vptr);
 
-	printf("UTP: executing \"%s\"\n", shell_cmd);
 	utp_file_f = popen(shell_cmd, "w");
 	utp_file = fileno(utp_file_f);
 
@@ -628,7 +632,8 @@ int is_child_dead(void)
 #endif
 int main(void)
 {
-	int u = -1, r;
+	int u = -1, wdt_fd = -1, r;
+	int watchdog_timeout = 127; /* sec */
 	struct utp_message *uc, *answer;
 	char env[256];
 
@@ -647,8 +652,27 @@ int main(void)
 		sleep(1);
 	}
 	u = open(UTP_DEVNODE, O_RDWR);
+	wdt_fd = open("/dev/watchdog", O_RDWR);
+	if (wdt_fd == -1){
+		printf("The watchdog is not configured, needed by mx35/mx51/mx53 \n");
+		printf("%d, %s\n", __LINE__, strerror(errno));
+	}else {
+		r = ioctl(wdt_fd, WDIOC_SETTIMEOUT, &watchdog_timeout); /* set the MAX timeout */
+		if (r)
+			printf("%d, %s\n", __LINE__, strerror(errno));
+	}
+
 
 	for(;;) {
+		if (wdt_fd >= 0){
+			static int inc = 0;
+			if(inc++ > 100){
+				r = ioctl(wdt_fd, WDIOC_KEEPALIVE);
+				if (r)
+					printf("%d, %s\n", __LINE__, strerror(errno));
+				inc = 0;
+			}
+		}
 		r = read(u, uc, sizeof(*uc) + 0x10000);
 		if (uc->flags & UTP_FLAG_COMMAND) {
 			answer = utp_handle_command(u, uc->command, uc->payload);

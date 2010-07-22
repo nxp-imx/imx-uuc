@@ -124,7 +124,7 @@ static int utp_mk_devnode(char *class, char *name, char *node, int type)
 		len = read(f, devnode, sizeof(devnode));
 		if (len >= 0) {
 			sscanf(devnode, "%d:%d", &major, &minor);
-			printf("%s: creating node '%s' with %d+%d\n", __func__, node, major, minor);
+		printf("%s: creating node '%s' with %d+%d\n", __func__, node, major, minor);
 			unlink(node);
 			rc = mknod(node, type | 0666, makedev(major, minor));
 		}
@@ -652,16 +652,16 @@ int main(void)
 		sleep(1);
 	}
 	u = open(UTP_DEVNODE, O_RDWR);
-	wdt_fd = open("/dev/watchdog", O_RDWR);
-	if (wdt_fd == -1){
+
+	if (utp_mk_devnode("class/misc", "watchdog", "/dev/watchdog", S_IFCHR)){
 		printf("The watchdog is not configured, needed by mx35/mx51/mx53 \n");
 		printf("%d, %s\n", __LINE__, strerror(errno));
-	}else {
+	} else{
+		wdt_fd = open("/dev/watchdog", O_RDWR);
 		r = ioctl(wdt_fd, WDIOC_SETTIMEOUT, &watchdog_timeout); /* set the MAX timeout */
 		if (r)
 			printf("%d, %s\n", __LINE__, strerror(errno));
 	}
-
 
 	for(;;) {
 		if (wdt_fd >= 0){

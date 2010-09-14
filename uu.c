@@ -33,6 +33,7 @@
 #include <stdarg.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <pthread.h>
 
 /* mxc SoC will enable watchdog at USB recovery mode
  * so, the user must service watchdog
@@ -56,6 +57,10 @@
 char *utp_firmware_version = "2.6.31";
 char *utp_sn = "000000000000";
 char *utp_chipid = "370000A5";
+/* for utp ioctl */
+#define UTP_IOCTL_BASE  'U'
+#define UTP_GET_CPU_ID  _IOR(UTP_IOCTL_BASE, 0, int)
+
 //#define NEED_TO_GET_CHILD_PID 1
 /*
  * this structure should be in sync with the same in
@@ -630,12 +635,29 @@ int is_child_dead(void)
 	return 0;
 }
 #endif
+
+void feed_watchdog(void *arg)
+{
+	int res;
+	int *fd = arg;
+	while(1) {
+		res = ioctl(*fd, WDIOC_KEEPALIVE);
+		if (res)
+			printf("ioctl WDIOC_KEEPALIVE error L%d, %s\n", __LINE__, strerror(errno));
+		printf("%s\n", __func__);
+		sleep(60);
+	}
+}
+
 int main(void)
 {
-	int u = -1, wdt_fd = -1, r;
-	int watchdog_timeout = 127; /* sec */
+	int u = -1, wdt_fd = -1, r, need_watchdog = 0;
+	int watchdog_timeout = 127;  /* sec */
+	int cpu_id = 50;
 	struct utp_message *uc, *answer;
 	char env[256];
+	pthread_t a_thread;
+	void *thread_result;
 
 	printf("%s %s [built %s %s]\n", PACKAGE, VERSION, __DATE__, __TIME__);
 	/* set stdout unbuffered, what is the usage??? */
@@ -652,27 +674,46 @@ int main(void)
 		sleep(1);
 	}
 	u = open(UTP_DEVNODE, O_RDWR);
-
-	if (utp_mk_devnode("class/misc", "watchdog", "/dev/watchdog", S_IFCHR)){
-		printf("The watchdog is not configured, needed by mx35/mx51/mx53 \n");
-		printf("%d, %s\n", __LINE__, strerror(errno));
-	} else{
-		wdt_fd = open("/dev/watchdog", O_RDWR);
-		r = ioctl(wdt_fd, WDIOC_SETTIMEOUT, &watchdog_timeout); /* set the MAX timeout */
-		if (r)
-			printf("%d, %s\n", __LINE__, strerror(errno));
+	r = ioctl(u, UTP_GET_CPU_ID, &cpu_id);
+	if (r)
+		printf("cpu id get error:L%d, %s\n", __LINE__, strerror(errno));
+	else{
+		switch (cpu_id) {
+			case 23:
+			case 25:
+			case 28:
+			case 50:
+				need_watchdog = 0;
+				break;
+			case 35:
+			case 51:
+			case 53:
+				need_watchdog = 1;
+				break;
+			default:
+				need_watchdog = 0;
+		}
+		printf("cpu_id is %d\n", cpu_id);
+		if (need_watchdog){
+			if (utp_mk_devnode("class/misc", "watchdog", "/dev/watchdog", S_IFCHR)){
+				printf("The watchdog is not configured, needed by mx35/mx51/mx53 \n");
+				printf("%d, %s\n", __LINE__, strerror(errno));
+			} else{
+				wdt_fd = open("/dev/watchdog", O_RDWR);
+				/* set the MAX timeout */
+				r = ioctl(wdt_fd, WDIOC_SETTIMEOUT, &watchdog_timeout);
+				if (r)
+					printf("%d, %s\n", __LINE__, strerror(errno));
+				r = pthread_create(&a_thread, NULL, (void *)feed_watchdog, (void *)(&wdt_fd));
+				if (r != 0) {
+					perror("Thread creation failed");
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
 	}
 
 	for(;;) {
-		if (wdt_fd >= 0){
-			static int inc = 0;
-			if(inc++ > 100){
-				r = ioctl(wdt_fd, WDIOC_KEEPALIVE);
-				if (r)
-					printf("%d, %s\n", __LINE__, strerror(errno));
-				inc = 0;
-			}
-		}
 		r = read(u, uc, sizeof(*uc) + 0x10000);
 		if (uc->flags & UTP_FLAG_COMMAND) {
 			answer = utp_handle_command(u, uc->command, uc->payload);

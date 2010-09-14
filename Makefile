@@ -4,7 +4,7 @@ AR=$(CROSS_COMPILE)AR
 all: uuc sdimage
 
 uuc: uu.c
-	$(CC)  uu.c -o uuc
+	$(CC)  uu.c -o uuc -lpthread
 
 sdimage: sdimage.c
 	$(CC) sdimage.c -o sdimage

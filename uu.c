@@ -34,7 +34,8 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <pthread.h>
-
+#include <linux/reboot.h>
+#include <sys/reboot.h>
 /* mxc SoC will enable watchdog at USB recovery mode
  * so, the user must service watchdog
  */
@@ -411,12 +412,16 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	}
 
 	else if (cmd[0] == '!') {
-		/* reboot */
+		/* reboot the system, and the ACK has already sent out */
 		if (cmd[1] == '3') {
-			utp_run("reboot");
+			sync();
+			kill(-1, SIGTERM);
+			sleep(1);
+			kill(-1, SIGKILL);
+
+			reboot(LINUX_REBOOT_CMD_RESTART);
 			return NULL;
 		}
-		utp_run("shutdown -h now");
 	}
 
 	else if (strncmp(cmd, "$ ", 2) == 0) {

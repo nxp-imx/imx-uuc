@@ -1,7 +1,7 @@
 /*
- * iMX233/28 utp decode program
+ * iMX utp decode program
  *
- * Copyright 2008-2010 Freescale Semiconductor
+ * Copyright 2010-2011 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,7 +46,7 @@
 
 #define UTP_FLAG_COMMAND	0x00000001
 #define UTP_FLAG_DATA		0x00000002
-#define UTP_FLAG_STATUS		0x00000004
+#define UTP_FLAG_STATUS		0x00000004    //indicate an error happens
 #define UTP_FLAG_REPORT_BUSY	0x10000000
 
 
@@ -62,7 +62,7 @@ char *utp_chipid = "370000A5";
 #define UTP_IOCTL_BASE  'U'
 #define UTP_GET_CPU_ID  _IOR(UTP_IOCTL_BASE, 0, int)
 
-//#define NEED_TO_GET_CHILD_PID 1
+#define NEED_TO_GET_CHILD_PID 1
 /*
  * this structure should be in sync with the same in
  * $KERNEL/drivers/usb/gadget/fsl_updater.c
@@ -169,7 +169,6 @@ static void utp_send_busy(int u)
 
 	w.flags = UTP_FLAG_REPORT_BUSY;
 	w.size = sizeof(w);
-	printf("UTP: sending %s\n", utp_answer_type(&w));
 	write(u, &w, w.size);
 }
 
@@ -232,7 +231,7 @@ static int utp_do_selftest(void)
 static int utp_can_busy(char *command)
 {
 	char *async[] ={
-		"$ ", NULL,
+		"$ ", "frf", "pollpipe", NULL,
 	};
 	char **ptr;
 
@@ -325,6 +324,22 @@ int utp_pipe(char *command, ... )
 	printf("pid is %d, UTP: executing \"%s\"\n",child_pid, shell_cmd);
 	return 0;
 }
+int utp_poll_pipe()
+{
+	int ret = 0, cnt = 0xFFFF;
+	while(ret == 0 && cnt > 0){
+		ret = is_child_dead();
+		usleep(10000);
+		cnt--;
+	}
+
+	if(ret == 0)
+		return 1;//failure
+	else
+		return 0;//Success
+}
+
+
 #else
 static int utp_flush(void)
 {
@@ -442,7 +457,6 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 			utp_run("kobs-ng -v -d %s", UTP_TARGET_FILE);
 		}
 	}
-
 	else if (strcmp(cmd, "ffs") == 0) {
 		/* perform actual flashing of the firmware to the SD */
 		utp_flush();
@@ -510,6 +524,13 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 			flags = UTP_FLAG_STATUS;
 	}
 
+	else if (strncmp(cmd, "pollpipe", 8) == 0) {
+		printf("UTP: poll pipe.\n");
+		status = utp_poll_pipe();
+		if (status)
+			flags = UTP_FLAG_STATUS;
+	}
+
 	else if (strncmp(cmd, "wrs", 3) == 0) {
 		/* Write rootfs to the SD */
 		printf("UTP: writing rootfs to SD card, mmc partition #%c, size %lld\n",
@@ -521,7 +542,7 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 		utp_mk_devnode("block", sysnode, devnode, S_IFBLK);
 
 		if (payload % 1024)
-			printf("UTP: WARNING! payload % 1024 != 0, the rest will be skipped");
+			printf("UTP: WARNING! payload %% 1024 != 0, the rest will be skipped");
 
 		status = utp_pipe("dd of=%s bs=1K", devnode);
 		if (status)
@@ -579,7 +600,7 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	}
 
 	else {
-		printf("UTP: Unknown command, ignored\n");
+		printf("UTP: Unknown command received, ignored\n");
 		flags = UTP_FLAG_STATUS;
 		status = -EINVAL;
 	}
@@ -603,7 +624,7 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 		free(data);
 	return w;
 }
-#if 0
+
 /*
  * Check the process is dead
  */
@@ -624,6 +645,7 @@ int is_child_dead(void)
 					continue;
 				}
 				if (*p == 'Z'){
+					printf("Process status polling: %s is in zombie.\n",path);
 					fclose(fh);
 					return 1;
 				}
@@ -632,14 +654,14 @@ int is_child_dead(void)
 		}
 	}
 	else{
-		printf("can't open %s, maybe the process %u has killed already\n",path,child_pid);
+		printf("Process polling: can't open %s, maybe the process %u has been killed already\n",path,child_pid);
 		return 1;
 	}
 
 	fclose(fh);
 	return 0;
 }
-#endif
+
 
 void feed_watchdog(void *arg)
 {
@@ -723,7 +745,7 @@ int main(void)
 		if (uc->flags & UTP_FLAG_COMMAND) {
 			answer = utp_handle_command(u, uc->command, uc->payload);
 			if (answer) {
-				printf("UTP: sending %s\n", utp_answer_type(answer));
+				printf("UTP: sending %s to kernel for command %s.\n", utp_answer_type(answer), uc->command);
 				write(u, answer, answer->size);
 				free(answer);
 			}

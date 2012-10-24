@@ -1,7 +1,7 @@
 /*
  * iMX utp decode program
  *
- * Copyright 2010-2011 Freescale Semiconductor, Inc.
+ * Copyright 2010-2012 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -250,7 +250,8 @@ static int utp_can_busy(char *command)
 static pid_t child_pid = -1;
 static int utp_flush(void)
 {
-	int ret, pstat;
+	int pstat;
+	int ret = 0;
 	pid_t pid;
 	if (utp_file) {
 		fflush(NULL);

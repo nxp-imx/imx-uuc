@@ -253,7 +253,7 @@ static int utp_flush(void)
 	int pstat;
 	int ret = 0;
 	pid_t pid;
-	if (utp_file) {
+	if (utp_file >= 0) {
 		fflush(NULL);
 		ret = close(utp_file);
 		do{
@@ -261,7 +261,7 @@ static int utp_flush(void)
 		}while (pid == -1 && errno == EINTR);
 		printf("UTP: closing the file\n");
 	}
-	utp_file = 0;
+	utp_file = -1;
 	return ret;
 }
 pid_t popen2(const char *command, int *infp, int *outfp)
@@ -349,12 +349,12 @@ static int utp_flush(void)
 		printf("UTP: waiting for pipe to close\n");
 		ret = pclose(utp_file_f);
 	}
-	else if (utp_file) {
+	else if (utp_file >= 0) {
 		printf("UTP: closing the file\n");
 		ret = close(utp_file);
 	}
 	utp_file_f = NULL;
-	utp_file = 0;
+	utp_file = -1;
 	printf("UTP: files were flushed.\n");
 	return ret;
 }

@@ -1,7 +1,7 @@
 /*
  * iMX utp decode program
  *
- * Copyright 2010-2012 Freescale Semiconductor, Inc.
+ * Copyright 2010-2013 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -570,8 +570,8 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 			flags = UTP_FLAG_STATUS;
 			status = errno;
 		} else {
-			size = lseek(f, SEEK_END, 0);	/* get the file size */
-			lseek(f, SEEK_SET, 0);
+			size = lseek(f, 0, SEEK_END);	/* get the file size */
+			lseek(f, 0, SEEK_SET);
 
 			data = malloc(size);
 			if (!data) {

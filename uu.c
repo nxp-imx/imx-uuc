@@ -53,7 +53,7 @@
 #pragma pack(1)
 
 #define PACKAGE "uuc"
-#define VERSION "0.4"
+#define VERSION "0.5"
 
 char *utp_firmware_version = "2.6.31";
 char *utp_sn = "000000000000";

@@ -69,6 +69,7 @@ int main(int argc, char **argv)
 	struct ConfigBlock bcb;
 	char *buff;
 	struct stat filestat;
+	int mincount;
 
 	if (argc < 2) {
 		printf("sdimage -f <firmware.sb> -d </dev/mmcblk>\n");
@@ -128,7 +129,10 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if ((mbr.part[i].count * 512) < (2 * filestat.st_size + 1)) {
+	/* calculate required partition size for 2 images in sectors */
+	mincount = 4 + 2 * ((filestat.st_size + 511) / 512);
+
+	if (mbr.part[i].count < mincount) {
 		printf("firmare partition is too small\n");
 		return -1;
 	}

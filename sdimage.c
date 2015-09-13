@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 	bcb.aDriverInfo[0].u32ChipNum = 0;
 	bcb.aDriverInfo[0].u32DriverType = 0;
 	bcb.aDriverInfo[0].u32Tag = bcb.u32PrimaryBootTag;
-	bcb.aDriverInfo[0].u32FirstSectorNumber = mbr.part[i].start + 1;
+	bcb.aDriverInfo[0].u32FirstSectorNumber = mbr.part[i].start + 4;
 
 	bcb.aDriverInfo[1].u32ChipNum = 0;
 	bcb.aDriverInfo[1].u32DriverType = 0;
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
 
 	printf("write first firmware\n");
 
-	lseek(devhandle, (mbr.part[i].start + 1) * 512, SEEK_SET);
+	lseek(devhandle, bcb.aDriverInfo[0].u32FirstSectorNumber * 512, SEEK_SET);
 	if (write(devhandle, buff, filestat.st_size) != filestat.st_size) {
 		printf("first firmware write fail\n");
 		return -1;
@@ -178,8 +178,7 @@ int main(int argc, char **argv)
 
 	printf("write second firmware\n");
 
-	lseek(devhandle, bcb.aDriverInfo[1].u32FirstSectorNumber * 512,
-	      SEEK_SET);
+	lseek(devhandle, bcb.aDriverInfo[1].u32FirstSectorNumber * 512, SEEK_SET);
 	if (write(devhandle, buff, filestat.st_size) != filestat.st_size) {
 		printf("second firmware write fail\n");
 		return -1;

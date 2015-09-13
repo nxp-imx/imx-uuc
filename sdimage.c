@@ -100,7 +100,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	firmwarehandle = open(g_firmware, O_RDWR);
+	firmwarehandle = open(g_firmware, O_RDONLY);
 	if (firmwarehandle < 0) {
 		printf("can't open file %s\n", g_firmware);
 		return -1;

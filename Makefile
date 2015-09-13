@@ -5,10 +5,10 @@ BINDIR ?= /usr/bin
 all: uuc sdimage
 
 uuc: uu.c
-	$(CC)  uu.c -o uuc -lpthread
+	$(CC) $(CFLAGS) uu.c -o uuc -lpthread
 
 sdimage: sdimage.c
-	$(CC) sdimage.c -o sdimage
+	$(CC) $(CFLAGS) sdimage.c -o sdimage
 
 install:
 	install -d $(DESTDIR)$(BINDIR)

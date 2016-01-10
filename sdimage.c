@@ -188,6 +188,10 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	free(buff);
+	if (fsync(devhandle) == -1) {
+		perror("fsync");
+		return -1;
+	}
 	close(devhandle);
 	close(firmwarehandle);
 	printf("done\r\n");

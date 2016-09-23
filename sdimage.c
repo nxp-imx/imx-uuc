@@ -21,6 +21,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string.h>
+#include <stdlib.h>
+
 char *g_filedev;
 char *g_firmware;
 

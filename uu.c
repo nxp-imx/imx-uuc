@@ -34,6 +34,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <pthread.h>
+#include <stropts.h>
 #include <linux/reboot.h>
 #include <sys/reboot.h>
 /* mxc SoC will enable watchdog at USB recovery mode
@@ -144,7 +145,7 @@ static int utp_mk_devnode(char *class, char *name, char *node, int type)
  *
  * Start the subshell and execute the command passed
  */
-static utp_run(char *command, ... )
+static int utp_run(char *command, ... )
 {
 	int r;
 	char cmd[1024];
@@ -248,6 +249,43 @@ static int utp_can_busy(char *command)
 #define READ 0
 #define WRITE 1
 static pid_t child_pid = -1;
+/*
+ * Check the process is dead
+ */
+#define NAME_MAX 30
+int is_child_dead(void)
+{
+	FILE *fh;
+	char path[NAME_MAX + 1];
+	sprintf(path, "/proc/%u/status", (unsigned int)child_pid);
+	if ((fh = fopen(path, "r"))){
+		char buf[1024];
+		while (fgets(buf, sizeof(buf) -1, fh)){
+			if (!strncmp(buf, "State:", 6))
+			{
+				char *p = buf + 6;
+				while (*p == '\t'){
+					p++;
+					continue;
+				}
+				if (*p == 'Z'){
+					printf("Process status polling: %s is in zombie.\n",path);
+					fclose(fh);
+					return 1;
+				}
+				break;
+			}
+		}
+	}
+	else{
+		printf("Process polling: can't open %s, maybe the process %u has been killed already\n",path,child_pid);
+		return 1;
+	}
+
+	fclose(fh);
+	return 0;
+}
+
 static int utp_flush(void)
 {
 	int pstat;
@@ -624,43 +662,6 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 	if (data)
 		free(data);
 	return w;
-}
-
-/*
- * Check the process is dead
- */
-#define NAME_MAX 30
-int is_child_dead(void)
-{
-	FILE *fh;
-	char path[NAME_MAX + 1];
-	sprintf(path, "/proc/%u/status", (unsigned int)child_pid);
-	if ((fh = fopen(path, "r"))){
-		char buf[1024];
-		while (fgets(buf, sizeof(buf) -1, fh)){
-			if (!strncmp(buf, "State:", 6))
-			{
-				char *p = buf + 6;
-				while (*p == '\t'){
-					p++;
-					continue;
-				}
-				if (*p == 'Z'){
-					printf("Process status polling: %s is in zombie.\n",path);
-					fclose(fh);
-					return 1;
-				}
-				break;
-			}
-		}
-	}
-	else{
-		printf("Process polling: can't open %s, maybe the process %u has been killed already\n",path,child_pid);
-		return 1;
-	}
-
-	fclose(fh);
-	return 0;
 }
 
 

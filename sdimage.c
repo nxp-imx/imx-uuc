@@ -16,6 +16,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -67,6 +69,7 @@ int main(int argc, char **argv)
 	struct ConfigBlock bcb;
 	char *buff;
 	struct stat filestat;
+	int mincount;
 
 	if (argc < 2) {
 		printf("sdimage -f <firmware.sb> -d </dev/mmcblk>\n");
@@ -97,7 +100,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	firmwarehandle = open(g_firmware, O_RDWR);
+	firmwarehandle = open(g_firmware, O_RDONLY);
 	if (firmwarehandle < 0) {
 		printf("can't open file %s\n", g_firmware);
 		return -1;
@@ -126,7 +129,10 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if ((mbr.part[i].count * 512) < (2 * filestat.st_size + 1)) {
+	/* calculate required partition size for 2 images in sectors */
+	mincount = 4 + 2 * ((filestat.st_size + 511) / 512);
+
+	if (mbr.part[i].count < mincount) {
 		printf("firmare partition is too small\n");
 		return -1;
 	}
@@ -140,7 +146,7 @@ int main(int argc, char **argv)
 	bcb.aDriverInfo[0].u32ChipNum = 0;
 	bcb.aDriverInfo[0].u32DriverType = 0;
 	bcb.aDriverInfo[0].u32Tag = bcb.u32PrimaryBootTag;
-	bcb.aDriverInfo[0].u32FirstSectorNumber = mbr.part[i].start + 1;
+	bcb.aDriverInfo[0].u32FirstSectorNumber = mbr.part[i].start + 4;
 
 	bcb.aDriverInfo[1].u32ChipNum = 0;
 	bcb.aDriverInfo[1].u32DriverType = 0;
@@ -168,7 +174,7 @@ int main(int argc, char **argv)
 
 	printf("write first firmware\n");
 
-	lseek(devhandle, (mbr.part[i].start + 1) * 512, SEEK_SET);
+	lseek(devhandle, bcb.aDriverInfo[0].u32FirstSectorNumber * 512, SEEK_SET);
 	if (write(devhandle, buff, filestat.st_size) != filestat.st_size) {
 		printf("first firmware write fail\n");
 		return -1;
@@ -176,13 +182,16 @@ int main(int argc, char **argv)
 
 	printf("write second firmware\n");
 
-	lseek(devhandle, bcb.aDriverInfo[1].u32FirstSectorNumber * 512,
-	      SEEK_SET);
+	lseek(devhandle, bcb.aDriverInfo[1].u32FirstSectorNumber * 512, SEEK_SET);
 	if (write(devhandle, buff, filestat.st_size) != filestat.st_size) {
 		printf("second firmware write fail\n");
 		return -1;
 	}
 	free(buff);
+	if (fsync(devhandle) == -1) {
+		perror("fsync");
+		return -1;
+	}
 	close(devhandle);
 	close(firmwarehandle);
 	printf("done\r\n");

@@ -644,7 +644,7 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 
 	w = malloc(size + sizeof(*w));
 	if (!w) {
-		printf("UTP: Could not allocate %zd+%lu bytes!\n", size, sizeof(*w));
+		printf("UTP: Could not allocate %zu+%zu bytes!\n", size, sizeof(*w));
 		return NULL;
 	}
 

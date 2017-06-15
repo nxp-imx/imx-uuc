@@ -86,7 +86,6 @@ struct utp_message {
 #pragma pack()
 
 static int utp_file = -1;
-static FILE *utp_file_f = NULL;
 
 static inline char *utp_answer_type(struct utp_message *u)
 {
@@ -116,7 +115,6 @@ static int utp_mk_devnode(char *class, char *name, char *node, int type)
 	char sys[256];
 	char devnode[20]; /* major:minor */
 	int major, minor;
-	char *colon;
 	int len, f, rc = -EINVAL;
 
 	if (access(node, F_OK) == 0) {
@@ -147,7 +145,6 @@ static int utp_mk_devnode(char *class, char *name, char *node, int type)
  */
 static int utp_run(char *command, ... )
 {
-	int r;
 	char cmd[1024];
 	va_list vptr;
 
@@ -310,7 +307,7 @@ pid_t popen2(const char *command, int *infp, int *outfp)
 }
 int utp_pipe(char *command, ... )
 {
-	int r, infp;
+	int infp;
 	char shell_cmd[1024];
 	va_list vptr;
 	va_start(vptr, command);
@@ -647,7 +644,7 @@ static struct utp_message *utp_handle_command(int u, char *cmd, unsigned long lo
 
 	w = malloc(size + sizeof(*w));
 	if (!w) {
-		printf("UTP: Could not allocate %zd+%lu bytes!\n", size, sizeof(*w));
+		printf("UTP: Could not allocate %zu+%zu bytes!\n", size, sizeof(*w));
 		return NULL;
 	}
 
@@ -684,9 +681,7 @@ int main(void)
 	int watchdog_timeout = 127;  /* sec */
 	int cpu_id = 50;
 	struct utp_message *uc, *answer;
-	char env[256];
 	pthread_t a_thread;
-	void *thread_result;
 
 	printf("%s %s [built %s %s]\n", PACKAGE, VERSION, __DATE__, __TIME__);
 	/* set stdout unbuffered, what is the usage??? */

@@ -9,6 +9,13 @@ mount -t configfs none /sys/kernel/config
 # disable turn off display
 echo -e "\033[9;0]" > /dev/tty0
 
+#Check if there is udc available
+DIRECTORY=/sys/class/udc
+if [ "ls -A $DIRECTORY" = "" ]; then
+echo "No udc available!"
+exit 1
+fi
+
 # USB UTP setup
 mkdir /sys/kernel/config/usb_gadget/g1
 cd /sys/kernel/config/usb_gadget/g1/
@@ -23,7 +30,13 @@ echo 5 > configs/c.1/MaxPower
 mkdir functions/mass_storage.1
 ln -s functions/mass_storage.1 configs/c.1/
 echo /fat > functions/mass_storage.1/lun.0/file
-echo ci_hdrc.0 > UDC
+
+for udc_name in $(ls $DIRECTORY)
+do
+echo "MFG tool will use 1st udc:$udc_name"
+echo $udc_name > UDC
+break
+done
 
 cd /home
 

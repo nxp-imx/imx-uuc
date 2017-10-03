@@ -1,14 +1,15 @@
 CC ?= $(CROSS_COMPILE)gcc
 BINDIR ?= /usr/bin
 PROGRAMS = uuc sdimage
+LIBS ?= -lpthread
 
 all: $(PROGRAMS)
 
 uuc: uu.c
-	$(CC) $(CFLAGS) uu.c -o uuc -lpthread
+	$(CC) $(CFLAGS) $(CPPFLAGS) uu.c -o uuc $(LDFLAGS) $(LIBS) 
 
 sdimage: sdimage.c
-	$(CC) $(CFLAGS) sdimage.c -o sdimage
+	$(CC) $(CFLAGS) $(CPPFLAGS) sdimage.c -o sdimage $(LDFLAGS)
 
 install:
 	install -d $(DESTDIR)$(BINDIR)

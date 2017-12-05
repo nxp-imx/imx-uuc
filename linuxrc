@@ -22,7 +22,14 @@ cd /sys/kernel/config/usb_gadget/g1/
 echo 0x066F > idVendor
 echo 0x37FF > idProduct
 mkdir strings/0x409
-echo 123456ABCDEF > strings/0x409/serialnumber
+
+if [ -e /sys/devices/soc0/soc_uid ]
+then
+cat /sys/devices/soc0/soc_uid > strings/0x409/serialnumber
+else
+echo 0000000000000000 > strings/0x409/serialnumber
+fi
+
 echo Freescale > strings/0x409/manufacturer
 echo "FSL i.MX Board" > strings/0x409/product
 mkdir configs/c.1

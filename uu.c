@@ -42,7 +42,6 @@
  */
 #include <linux/watchdog.h>
 
-#define UTP_DEVNODE 	"/dev/utp"
 #define UTP_TARGET_FILE	"/tmp/file.utp"
 
 #define UTP_FLAG_COMMAND	0x00000001
@@ -675,13 +674,16 @@ void feed_watchdog(void *arg)
 	}
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	int u = -1, wdt_fd = -1, r, need_watchdog = 0;
 	int watchdog_timeout = 127;  /* sec */
 	int cpu_id = 50;
 	struct utp_message *uc, *answer;
 	pthread_t a_thread;
+	char * utp_devnode="/dev/utp";
+	if (argc > 1)
+		utp_devnode = argv[1];
 
 	printf("%s %s [built %s %s]\n", PACKAGE, VERSION, __DATE__, __TIME__);
 	/* set stdout unbuffered, what is the usage??? */
@@ -692,12 +694,13 @@ int main(void)
 
 	setenv("FILE", UTP_TARGET_FILE, !0);
 
-	printf("UTP: Waiting for device to appear\n");
-	while (utp_mk_devnode("class/misc", "utp", UTP_DEVNODE, S_IFCHR) < 0) {
+	printf("UTP: Waiting for %s to appear\n", utp_devnode);
+
+	while (utp_mk_devnode("class/misc", "utp", utp_devnode, S_IFCHR) < 0) {
 		putchar('.');
 		sleep(1);
 	}
-	u = open(UTP_DEVNODE, O_RDWR);
+	u = open(utp_devnode, O_RDWR);
 	r = ioctl(u, UTP_GET_CPU_ID, &cpu_id);
 	if (r)
 		printf("cpu id get error:L%d, %s\n", __LINE__, strerror(errno));

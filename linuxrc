@@ -9,52 +9,72 @@ mount -t configfs none /sys/kernel/config
 # disable turn off display
 echo -e "\033[9;0]" > /dev/tty0
 
-#Check if there is udc available, if not, wait forever
+
+last=0;
+
 UDC_DIR=/sys/class/udc
+
+function contains() {
+	for i in "${files[@]}"
+	do
+		if [ "$i" == "$1" ]; then
+			return 1;
+		fi
+	done
+	return 0
+}
+
+function launch_uuc() {
+	echo $1 $2
+	mkdir /sys/kernel/config/usb_gadget/$1
+	cd /sys/kernel/config/usb_gadget/$1
+	echo 0x066F > idVendor
+	echo 0x37FF > idProduct
+	mkdir strings/0x409
+
+	if [ -e /sys/devices/soc0/soc_uid ]; then
+		cat /sys/devices/soc0/soc_uid > strings/0x409/serialnumber
+	else
+		echo 0000000000000000 > strings/0x409/serialnumber
+	fi
+
+	echo "FSL i.MX Board" > strings/0x409/product
+	mkdir configs/c.1
+	echo 5 > configs/c.1/MaxPower
+	mkdir functions/mass_storage.1
+	ln -s functions/mass_storage.1 configs/c.1/
+	echo /fat > functions/mass_storage.1/lun.0/file
+
+	echo $1 > UDC
+
+	cd /home
+	echo "Start UTP at $1"
+	if [ $2 == "0" ]; then
+		echo uuc /dev/utp
+		uuc /dev/utp
+	else
+		echo uuc /dev/utp$2
+		uuc /dev/utp$2
+	fi
+}
+
 while true; do
 if test "$(ls -A "$UDC_DIR")"; then
-	echo "The available udc:"
-	for entry in "$UDC_DIR"/*
+	cd $UDC_DIR
+	for entry in *
 	do
-		echo "$entry"
+		if contains $entry; then
+			files[$last]=$entry;
+			id=$last;
+			last=`expr $last + 1`;
+			echo "Found New UDC: $entry";
+			launch_uuc $entry $id&
+		fi
 	done
-	break;
+	sleep 1
 else
-	echo "No udc available!"
+	echo "No udc Available!"
 	sleep 30
 fi
 done
 
-# USB UTP setup
-mkdir /sys/kernel/config/usb_gadget/g1
-cd /sys/kernel/config/usb_gadget/g1/
-echo 0x066F > idVendor
-echo 0x37FF > idProduct
-mkdir strings/0x409
-
-if [ -e /sys/devices/soc0/soc_uid ]
-then
-cat /sys/devices/soc0/soc_uid > strings/0x409/serialnumber
-else
-echo 0000000000000000 > strings/0x409/serialnumber
-fi
-
-echo Freescale > strings/0x409/manufacturer
-echo "FSL i.MX Board" > strings/0x409/product
-mkdir configs/c.1
-echo 5 > configs/c.1/MaxPower
-mkdir functions/mass_storage.1
-ln -s functions/mass_storage.1 configs/c.1/
-echo /fat > functions/mass_storage.1/lun.0/file
-
-for udc_name in $(ls $UDC_DIR)
-do
-echo "MFG tool will use 1st udc:$udc_name"
-echo $udc_name > UDC
-break
-done
-
-cd /home
-
-echo "Starting UTP"
-uuc

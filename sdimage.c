@@ -16,6 +16,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -27,23 +28,21 @@
 char *g_filedev;
 char *g_firmware;
 
-struct PART {
-	unsigned char boot;
-	unsigned char starthead;
-	unsigned char startsector;
-	unsigned char startcylinder;
-	unsigned char filesystem;
-	unsigned char endhead;
-	unsigned char endsector;
-	unsigned char endcylinder;
-	unsigned int start;
-	unsigned int count;
+/* Partition Table Entry */
+struct pte {
+	uint8_t active;
+	uint8_t chs_start[3];
+	uint8_t type;
+	uint8_t chs_end[3];
+	uint32_t start;
+	uint32_t count;
 } __attribute__ ((packed));
 
-struct MBR {
-	unsigned char resevered[446];
-	struct PART part[4];
-	unsigned short sign;
+/* Master Boot Record */
+struct mbr {
+	char bootstrap_code[446];
+	struct pte partition[4];
+	uint16_t signature;
 } __attribute__ ((packed));
 
 struct DeviceInfo {
@@ -67,7 +66,7 @@ int main(int argc, char **argv)
 	int i = 0;
 	int devhandle;
 	int firmwarehandle;
-	struct MBR mbr;
+	struct mbr mbr;
 	struct ConfigBlock bcb;
 	char *buff;
 	struct stat filestat;
@@ -121,13 +120,13 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if (mbr.sign != 0xAA55) {
-		printf("Check MBR signature fail 0x%x\n", mbr.sign);
+	if (mbr.signature != 0xAA55) {
+		printf("Check MBR signature fail 0x%x\n", mbr.signature);
 		return -1;
 	}
 
 	for (i = 0; i < 4; i++) {
-		if (mbr.part[i].filesystem == 'S')
+		if (mbr.partition[i].type == 'S')
 			break;
 	}
 
@@ -139,7 +138,7 @@ int main(int argc, char **argv)
 	/* calculate required partition size for 2 images in sectors */
 	mincount = 4 + 2 * ((filestat.st_size + 511) / 512);
 
-	if (mbr.part[i].count < mincount) {
+	if (mbr.partition[i].count < mincount) {
 		printf("firmare partition is too small\n");
 		return -1;
 	}
@@ -153,7 +152,7 @@ int main(int argc, char **argv)
 	bcb.aDriverInfo[0].u32ChipNum = 0;
 	bcb.aDriverInfo[0].u32DriverType = 0;
 	bcb.aDriverInfo[0].u32Tag = bcb.u32PrimaryBootTag;
-	bcb.aDriverInfo[0].u32FirstSectorNumber = mbr.part[i].start + 4;
+	bcb.aDriverInfo[0].u32FirstSectorNumber = mbr.partition[i].start + 4;
 
 	bcb.aDriverInfo[1].u32ChipNum = 0;
 	bcb.aDriverInfo[1].u32DriverType = 0;
@@ -162,7 +161,7 @@ int main(int argc, char **argv)
 	    bcb.aDriverInfo[0].u32FirstSectorNumber
 	    + ((filestat.st_size + 511) / 512);
 
-	lseek(devhandle, mbr.part[i].start * 512, SEEK_SET);
+	lseek(devhandle, mbr.partition[i].start * 512, SEEK_SET);
 	if (write(devhandle, &bcb, sizeof(bcb)) != sizeof(bcb)) {
 		printf("write bcb error\n");
 		return -1;

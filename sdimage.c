@@ -202,7 +202,7 @@ int main(int argc, char **argv)
 
 	close(devhandle);
 	close(firmwarehandle);
-	printf("done\r\n");
+	printf("done\n");
 
 	return 0;
 }

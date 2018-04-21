@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
 char *g_filedev;
 char *g_firmware;
 
@@ -38,6 +39,7 @@ struct PART {
 	unsigned int start;
 	unsigned int count;
 } __attribute__ ((packed));
+
 struct MBR {
 	unsigned char resevered[446];
 	struct PART part[4];
@@ -75,6 +77,7 @@ int main(int argc, char **argv)
 		printf("sdimage -f <firmware.sb> -d </dev/mmcblk>\n");
 		return -1;
 	}
+
 	for (i = 0; i < argc; i++) {
 		if (strcmp(argv[i], "-f") == 0) {
 			g_firmware = argv[i + 1];
@@ -85,10 +88,12 @@ int main(int argc, char **argv)
 			i++;
 		}
 	}
+
 	if (g_firmware == NULL) {
 		printf("you need give -f <firmware file>\n");
 		return -1;
 	}
+
 	if (g_filedev == NULL) {
 		printf("you need give -d <dev file> \n");
 		return -1;
@@ -105,10 +110,12 @@ int main(int argc, char **argv)
 		printf("can't open file %s\n", g_firmware);
 		return -1;
 	}
+
 	if (stat(g_firmware, &filestat)) {
 		printf("stat %s error\n", g_firmware);
 		return -1;
 	}
+
 	if (read(devhandle, &mbr, sizeof(mbr)) < sizeof(mbr)) {
 		printf("read block 0 fail");
 		return -1;
@@ -188,12 +195,15 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	free(buff);
+
 	if (fsync(devhandle) == -1) {
 		perror("fsync");
 		return -1;
 	}
+
 	close(devhandle);
 	close(firmwarehandle);
 	printf("done\r\n");
+
 	return 0;
 }

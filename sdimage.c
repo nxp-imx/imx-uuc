@@ -25,9 +25,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-char *g_filedev;
-char *g_firmware;
-
 /* Partition Table Entry */
 struct pte {
 	uint8_t active;
@@ -73,6 +70,8 @@ struct bcb {                                /* (Analogous) Comments from i.MX28 
 
 int main(int argc, char **argv)
 {
+	char *filedev;
+	char *firmware;
 	int i;
 	int devhandle;
 	int firmwarehandle;
@@ -89,39 +88,39 @@ int main(int argc, char **argv)
 
 	for (i = 0; i < argc; i++) {
 		if (strcmp(argv[i], "-f") == 0) {
-			g_firmware = argv[i + 1];
+			firmware = argv[i + 1];
 			i++;
 		}
 		if (strcmp(argv[i], "-d") == 0) {
-			g_filedev = argv[i + 1];
+			filedev = argv[i + 1];
 			i++;
 		}
 	}
 
-	if (g_firmware == NULL) {
+	if (firmware == NULL) {
 		printf("you need give -f <firmware file>\n");
 		return -1;
 	}
 
-	if (g_filedev == NULL) {
+	if (filedev == NULL) {
 		printf("you need give -d <dev file> \n");
 		return -1;
 	}
 
-	devhandle = open(g_filedev, O_RDWR);
+	devhandle = open(filedev, O_RDWR);
 	if (devhandle < 0) {
-		printf("can't open file %s\n", g_filedev);
+		printf("can't open file %s\n", filedev);
 		return -1;
 	}
 
-	firmwarehandle = open(g_firmware, O_RDONLY);
+	firmwarehandle = open(firmware, O_RDONLY);
 	if (firmwarehandle < 0) {
-		printf("can't open file %s\n", g_firmware);
+		printf("can't open file %s\n", firmware);
 		return -1;
 	}
 
-	if (stat(g_firmware, &filestat)) {
-		printf("stat %s error\n", g_firmware);
+	if (stat(firmware, &filestat)) {
+		printf("stat %s error\n", firmware);
 		return -1;
 	}
 

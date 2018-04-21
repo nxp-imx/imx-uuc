@@ -17,6 +17,7 @@
  */
 
 #include <stdint.h>
+#include <endian.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -67,6 +68,60 @@ struct bcb {                                /* (Analogous) Comments from i.MX28 
 	                                     * structure to be able to add more drives in
 	                                     * future without changing ROM code            */
 } __attribute__ ((packed));
+
+/* convert the fields of struct mbr to host byte order */
+void mbr_to_hbo(struct mbr *mbr)
+{
+	int i;
+
+	mbr->signature = le16toh(mbr->signature);
+
+	for (i = 0; i < 4; i++) {
+		mbr->partition[i].start = le32toh(mbr->partition[i].start);
+		mbr->partition[i].count = le32toh(mbr->partition[i].count);
+	}
+}
+
+/* convert the fields of struct bcb to host byte order */
+void bcb_to_host(struct bcb *bcb)
+{
+	int i;
+
+	bcb->signature          = le32toh(bcb->signature);
+	bcb->primary_boot_tag   = le32toh(bcb->primary_boot_tag);
+	bcb->secondary_boot_tag = le32toh(bcb->secondary_boot_tag);
+	bcb->num_copies         = le32toh(bcb->num_copies);
+
+	/* meanwhile we have num_copies in host byte order, so we can use it */
+	for (i = 0; i < bcb->num_copies; i++) {
+		bcb->drive_info[i].chip_num            = le32toh(bcb->drive_info[i].chip_num);
+		bcb->drive_info[i].drive_type          = le32toh(bcb->drive_info[i].drive_type);
+		bcb->drive_info[i].tag                 = le32toh(bcb->drive_info[i].tag);
+		bcb->drive_info[i].first_sector_number = le32toh(bcb->drive_info[i].first_sector_number);
+		bcb->drive_info[i].sector_count        = le32toh(bcb->drive_info[i].sector_count);
+	}
+}
+
+/* convert the fields of struct bcb to disk byte order (little endian) */
+void bcb_to_disk(struct bcb *bcb)
+{
+	int i;
+
+	/* convert the array items first because we need num_copies in host byte order */
+	for (i = 0; i < bcb->num_copies; i++) {
+		bcb->drive_info[i].chip_num            = htole32(bcb->drive_info[i].chip_num);
+		bcb->drive_info[i].drive_type          = htole32(bcb->drive_info[i].drive_type);
+		bcb->drive_info[i].tag                 = htole32(bcb->drive_info[i].tag);
+		bcb->drive_info[i].first_sector_number = htole32(bcb->drive_info[i].first_sector_number);
+		bcb->drive_info[i].sector_count        = htole32(bcb->drive_info[i].sector_count);
+	}
+
+	bcb->signature          = htole32(bcb->signature);
+	bcb->primary_boot_tag   = htole32(bcb->primary_boot_tag);
+	bcb->secondary_boot_tag = htole32(bcb->secondary_boot_tag);
+	bcb->num_copies         = htole32(bcb->num_copies);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -129,6 +184,8 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+	mbr_to_hbo(&mbr);
+
 	if (mbr.signature != 0xAA55) {
 		printf("Check MBR signature fail 0x%x\n", mbr.signature);
 		return -1;
@@ -170,11 +227,17 @@ int main(int argc, char **argv)
 	    bcb.drive_info[0].first_sector_number
 	    + ((filestat.st_size + 511) / 512);
 
+	/* convert bcb to disk byte order for writing */
+	bcb_to_disk(&bcb);
+
 	lseek(devhandle, mbr.partition[i].start * 512, SEEK_SET);
 	if (write(devhandle, &bcb, sizeof(bcb)) != sizeof(bcb)) {
 		printf("write bcb error\n");
 		return -1;
 	}
+
+	/* convert bcb back to host byte order */
+	bcb_to_host(&bcb);
 
 	buff = malloc(filestat.st_size);
 	if (buff == NULL) {

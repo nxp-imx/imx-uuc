@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
 
 	if (argc < 2) {
 		printf("sdimage -f <firmware.sb> -d </dev/mmcblk>\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	for (i = 0; i < argc; i++) {
@@ -155,41 +155,41 @@ int main(int argc, char *argv[])
 
 	if (firmware == NULL) {
 		printf("you need give -f <firmware file>\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	if (devicename == NULL) {
 		printf("you need give -d <dev file> \n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	dev_fd = open(devicename, O_RDWR);
 	if (dev_fd < 0) {
 		printf("can't open file %s\n", devicename);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	fw_fd = open(firmware, O_RDONLY);
 	if (fw_fd < 0) {
 		printf("can't open file %s\n", firmware);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	if (stat(firmware, &fw_stat)) {
 		printf("stat %s error\n", firmware);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	if (read(dev_fd, &mbr, sizeof(mbr)) < sizeof(mbr)) {
 		printf("read block 0 fail");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	mbr_to_hbo(&mbr);
 
 	if (mbr.signature != 0xAA55) {
 		printf("Check MBR signature fail 0x%x\n", mbr.signature);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	for (i = 0; i < 4; i++) {
@@ -199,7 +199,7 @@ int main(int argc, char *argv[])
 
 	if (i == 4) {
 		printf("Can't found boot stream partition\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	/* calculate required partition size for 2 images in sectors */
@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
 
 	if (mbr.partition[i].count < mincount) {
 		printf("firmare partition is too small\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	memset(&bcb, 0, sizeof(bcb));
@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
 	lseek(dev_fd, mbr.partition[i].start * 512, SEEK_SET);
 	if (write(dev_fd, &bcb, sizeof(bcb)) != sizeof(bcb)) {
 		printf("write bcb error\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	/* convert bcb back to host byte order */
@@ -243,12 +243,12 @@ int main(int argc, char *argv[])
 	buff = malloc(fw_stat.st_size);
 	if (buff == NULL) {
 		printf("malloc fail\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	if (read(fw_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
 		printf("read firmware fail\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	printf("write first firmware\n");
@@ -256,7 +256,7 @@ int main(int argc, char *argv[])
 	lseek(dev_fd, bcb.drive_info[0].first_sector_number * 512, SEEK_SET);
 	if (write(dev_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
 		printf("first firmware write fail\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	printf("write second firmware\n");
@@ -264,18 +264,18 @@ int main(int argc, char *argv[])
 	lseek(dev_fd, bcb.drive_info[1].first_sector_number * 512, SEEK_SET);
 	if (write(dev_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
 		printf("second firmware write fail\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 	free(buff);
 
 	if (fsync(dev_fd) == -1) {
 		perror("fsync");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	close(dev_fd);
 	close(fw_fd);
 	printf("done\n");
 
-	return 0;
+	return EXIT_SUCCESS;
 }

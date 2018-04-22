@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright (C) 2018 Michael Heimpold
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,12 +21,23 @@
 #include <endian.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include <errno.h>
+
+#define DEBUG 0
+
+/* size of a sector in bytes */
+#define SECTOR_SIZE 512
+
+/* calculate the count of required sectors for given byte size */
+#define SECTOR_COUNT(x) (((x) + SECTOR_SIZE - 1) / SECTOR_SIZE)
 
 /* Partition Table Entry */
 struct pte {
@@ -36,6 +48,8 @@ struct pte {
 	uint32_t start;
 	uint32_t count;
 } __attribute__ ((packed));
+
+#define MBR_SIGNATURE 0xAA55
 
 /* Master Boot Record */
 struct mbr {
@@ -71,7 +85,7 @@ struct bcb {                                /* (Analogous) Comments from i.MX28 
 } __attribute__ ((packed));
 
 /* convert the fields of struct mbr to host byte order */
-void mbr_to_hbo(struct mbr *mbr)
+void mbr_to_host(struct mbr *mbr)
 {
 	int i;
 
@@ -123,93 +137,154 @@ void bcb_to_disk(struct bcb *bcb)
 	bcb->num_copies         = htole32(bcb->num_copies);
 }
 
+#define DEFAULT_DEVICE "/dev/mmcblk0"
+
+/* command line options */
+const struct option long_options[] = {
+	{ "device",           required_argument,   0, 'd' },
+	{ "firmware",         required_argument,   0, 'f' },
+	{ "help",             no_argument,         0, 'h' },
+	/* stop condition for iterator */
+	{ NULL,               0,                   0,   0 },
+};
+
+/* command line help descriptions */
+const char *long_options_descs[] = {
+	"device to write firmware to (default: " DEFAULT_DEVICE ")",
+	"firmware file to write",
+	"print this usage and exit",
+	/* stop condition for iterator */
+	NULL
+};
+
+void usage(const char *progname, int exitcode)
+{
+	const char **desc = long_options_descs;
+	const struct option *op = long_options;
+
+	fprintf(stderr,
+	        "%s -- tool to install i.MX23/28 bootstreams in devices or image files\n\n"
+	        "Usage: %s [options] -f <firmware>\n\n"
+	        "Options:\n",
+	        progname, progname);
+	while (op->name && desc) {
+		fprintf(stderr, "\t-%c, --%-12s\t%s\n", op->val, op->name, *desc);
+		op++; desc++;
+	}
+	fprintf(stderr, "\n");
+
+	exit(exitcode);
+}
 
 int main(int argc, char *argv[])
 {
-	char *devicename = "/dev/mmcblk0";
-	char *firmware;
+	char *devicename = DEFAULT_DEVICE;
+	char *firmware = NULL;
 	struct mbr mbr;
+	struct pte *part;
 	struct bcb bcb;
-	int dev_fd;
-	int fw_fd;
+	int rv = EXIT_FAILURE;
+	int dev_fd = -1, fw_fd = -1;
 	struct stat fw_stat;
-	int i;
-	char *buff;
-	int mincount;
+	char *fw = NULL;
+	int i, mincount, sector_offset = SECTOR_COUNT(sizeof(struct bcb));
 
-	if (argc < 2) {
-		printf("sdimage -f <firmware.sb> -d </dev/mmcblk>\n");
-		return EXIT_FAILURE;
-	}
+	while (1) {
+		int c = getopt_long(argc, argv, "d:f:h", long_options, NULL);
 
-	for (i = 0; i < argc; i++) {
-		if (strcmp(argv[i], "-f") == 0) {
-			firmware = argv[i + 1];
-			i++;
+		/* detect the end of the options */
+		if (c == -1)
+			break;
+
+		switch (c) {
+			case 'd':
+				devicename = optarg;
+				break;
+			case 'f':
+				firmware = optarg;
+				break;
+			case 'h':
+			case '?':
+				rv = EXIT_SUCCESS;
+				/* fall-through */
+			default:
+				usage(argv[0], rv);
 		}
-		if (strcmp(argv[i], "-d") == 0) {
-			devicename = argv[i + 1];
-			i++;
-		}
 	}
 
-	if (firmware == NULL) {
-		printf("you need give -f <firmware file>\n");
-		return EXIT_FAILURE;
-	}
+	if (!firmware)
+		usage(argv[0], rv);
 
-	if (devicename == NULL) {
-		printf("you need give -d <dev file> \n");
-		return EXIT_FAILURE;
-	}
-
-	dev_fd = open(devicename, O_RDWR);
-	if (dev_fd < 0) {
-		printf("can't open file %s\n", devicename);
-		return EXIT_FAILURE;
-	}
-
+	/* open firmware file and memory map it */
 	fw_fd = open(firmware, O_RDONLY);
-	if (fw_fd < 0) {
-		printf("can't open file %s\n", firmware);
-		return EXIT_FAILURE;
+	if (fw_fd == -1) {
+		fprintf(stderr, "Can't open firmware '%s': %s\n", firmware, strerror(errno));
+		goto close_out;
 	}
 
-	if (stat(firmware, &fw_stat)) {
-		printf("stat %s error\n", firmware);
-		return EXIT_FAILURE;
+	if (fstat(fw_fd, &fw_stat) == -1) {
+		fprintf(stderr, "fstat(%s) failed: %s\n", firmware, strerror(errno));
+		goto close_out;
+	}
+
+	fw = (char *)mmap(NULL, fw_stat.st_size, PROT_READ, MAP_PRIVATE, fw_fd, 0);
+	if (fw == MAP_FAILED) {
+		fprintf(stderr, "mmap(%s) failed: %s\n", firmware, strerror(errno));
+		goto close_out;
+	}
+
+#if DEBUG == 1
+	fprintf(stderr, "Firmware size: %ld bytes, %ld sectors\n", fw_stat.st_size, SECTOR_COUNT(fw_stat.st_size));
+#endif
+
+	/* open target device and read MBR with partition table */
+	dev_fd = open(devicename, O_RDWR);
+	if (dev_fd == -1) {
+		fprintf(stderr, "Can't open device '%s': %s\n", devicename, strerror(errno));
+		goto close_out;
 	}
 
 	if (read(dev_fd, &mbr, sizeof(mbr)) < sizeof(mbr)) {
-		printf("read block 0 fail");
-		return EXIT_FAILURE;
+		fprintf(stderr, "Could not read MBR and partition table of '%s': %s", devicename, strerror(errno));
+		goto close_out;
 	}
 
-	mbr_to_hbo(&mbr);
+	/* partition table is little endian on disk, so convert to host byte order */
+	mbr_to_host(&mbr);
 
-	if (mbr.signature != 0xAA55) {
-		printf("Check MBR signature fail 0x%x\n", mbr.signature);
-		return EXIT_FAILURE;
+	/* safety check that we found a partition table at all */
+	if (mbr.signature != MBR_SIGNATURE) {
+		fprintf(stderr, "MBR signature check failed: expected 0x%" PRIx16 ", read 0x%" PRIx16 "\n",
+		        MBR_SIGNATURE, mbr.signature);
+		goto unmap_out;
 	}
 
+	/* search bootstream partition */
 	for (i = 0; i < 4; i++) {
-		if (mbr.partition[i].type == 'S')
+		if (mbr.partition[i].type == 'S') {
+			part = &mbr.partition[i];
 			break;
+		}
 	}
 
 	if (i == 4) {
-		printf("Can't found boot stream partition\n");
-		return EXIT_FAILURE;
+		fprintf(stderr, "Could not find bootstream partition.\n");
+		goto unmap_out;
 	}
 
-	/* calculate required partition size for 2 images in sectors */
-	mincount = 4 + 2 * ((fw_stat.st_size + 511) / 512);
+	/* we assume that we want to have at least two images of the same size
+	 * in the bootstream partition, plus the first sector containing the BCB;
+	 * so calculate the required minimum partition size (in sectors a 512 byte)
+	 */
+	mincount = SECTOR_COUNT(sizeof(struct bcb)) + 2 * SECTOR_COUNT(fw_stat.st_size);
 
-	if (mbr.partition[i].count < mincount) {
-		printf("firmare partition is too small\n");
-		return EXIT_FAILURE;
+	if (part->count < mincount) {
+		fprintf(stderr, "Bootstream partition is too small with %" PRIu32 " sectors.\n", part->count);
+		fprintf(stderr, "With two instances of this firmware we require at least %d sectors.\n", mincount);
+		goto unmap_out;
 	}
 
+	/* init bcb */
 	memset(&bcb, 0, sizeof(bcb));
 	bcb.signature = 0x00112233;
 	bcb.primary_boot_tag = 1;
@@ -219,63 +294,68 @@ int main(int argc, char *argv[])
 	bcb.drive_info[0].chip_num = 0;
 	bcb.drive_info[0].drive_type = 0;
 	bcb.drive_info[0].tag = bcb.primary_boot_tag;
-	bcb.drive_info[0].first_sector_number = mbr.partition[i].start + 4;
+	bcb.drive_info[0].first_sector_number = part->start + sector_offset;
+	bcb.drive_info[0].sector_count = SECTOR_COUNT(fw_stat.st_size);
 
 	bcb.drive_info[1].chip_num = 0;
 	bcb.drive_info[1].drive_type = 0;
 	bcb.drive_info[1].tag = bcb.secondary_boot_tag;
 	bcb.drive_info[1].first_sector_number =
-	    bcb.drive_info[0].first_sector_number
-	    + ((fw_stat.st_size + 511) / 512);
+	    bcb.drive_info[0].first_sector_number + bcb.drive_info[0].sector_count;
+	bcb.drive_info[1].sector_count = SECTOR_COUNT(fw_stat.st_size);
+
+#if DEBUG == 1
+	fprintf(stderr, "1st bootstream start sector: %" PRIu32 "\n", bcb.drive_info[0].first_sector_number);
+	fprintf(stderr, "2nd bootstream start sector: %" PRIu32 "\n", bcb.drive_info[1].first_sector_number);
+#endif
 
 	/* convert bcb to disk byte order for writing */
 	bcb_to_disk(&bcb);
 
-	lseek(dev_fd, mbr.partition[i].start * 512, SEEK_SET);
+	lseek(dev_fd, part->start * SECTOR_SIZE, SEEK_SET);
 	if (write(dev_fd, &bcb, sizeof(bcb)) != sizeof(bcb)) {
-		printf("write bcb error\n");
-		return EXIT_FAILURE;
+		fprintf(stderr, "Writing BCB to '%s' failed: %s\n", devicename, strerror(errno));
+		goto unmap_out;
 	}
 
 	/* convert bcb back to host byte order */
 	bcb_to_host(&bcb);
 
-	buff = malloc(fw_stat.st_size);
-	if (buff == NULL) {
-		printf("malloc fail\n");
-		return EXIT_FAILURE;
+	printf("Writing first firmware... ");
+
+	lseek(dev_fd, bcb.drive_info[0].first_sector_number * SECTOR_SIZE, SEEK_SET);
+	if (write(dev_fd, fw, fw_stat.st_size) != fw_stat.st_size) {
+		printf("failed: %s\n", strerror(errno));
+		goto unmap_out;
+	} else {
+		printf("ok.\n");
 	}
 
-	if (read(fw_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
-		printf("read firmware fail\n");
-		return EXIT_FAILURE;
+	printf("Writing second firmware... ");
+
+	lseek(dev_fd, bcb.drive_info[1].first_sector_number * SECTOR_SIZE, SEEK_SET);
+	if (write(dev_fd, fw, fw_stat.st_size) != fw_stat.st_size) {
+		printf("failed: %s\n", strerror(errno));
+		goto unmap_out;
+	} else {
+		printf("ok.\n");
 	}
-
-	printf("write first firmware\n");
-
-	lseek(dev_fd, bcb.drive_info[0].first_sector_number * 512, SEEK_SET);
-	if (write(dev_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
-		printf("first firmware write fail\n");
-		return EXIT_FAILURE;
-	}
-
-	printf("write second firmware\n");
-
-	lseek(dev_fd, bcb.drive_info[1].first_sector_number * 512, SEEK_SET);
-	if (write(dev_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
-		printf("second firmware write fail\n");
-		return EXIT_FAILURE;
-	}
-	free(buff);
 
 	if (fsync(dev_fd) == -1) {
-		perror("fsync");
-		return EXIT_FAILURE;
+		fprintf(stderr, "fsync(%s) failed: %s\n", devicename, strerror(errno));
+		goto unmap_out;
 	}
 
-	close(dev_fd);
-	close(fw_fd);
-	printf("done\n");
+	rv = EXIT_SUCCESS;
 
-	return EXIT_SUCCESS;
+unmap_out:
+	munmap(fw, fw_stat.st_size);
+
+close_out:
+	if (dev_fd != -1)
+		close(dev_fd);
+	if (fw_fd != -1)
+		close(fw_fd);
+
+	return rv;
 }

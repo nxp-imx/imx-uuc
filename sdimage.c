@@ -18,13 +18,14 @@
 
 #include <stdint.h>
 #include <endian.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <fcntl.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 /* Partition Table Entry */
 struct pte {
@@ -123,17 +124,17 @@ void bcb_to_disk(struct bcb *bcb)
 }
 
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
-	char *filedev;
+	char *devicename = "/dev/mmcblk0";
 	char *firmware;
-	int i;
-	int devhandle;
-	int firmwarehandle;
 	struct mbr mbr;
 	struct bcb bcb;
+	int dev_fd;
+	int fw_fd;
+	struct stat fw_stat;
+	int i;
 	char *buff;
-	struct stat filestat;
 	int mincount;
 
 	if (argc < 2) {
@@ -147,7 +148,7 @@ int main(int argc, char **argv)
 			i++;
 		}
 		if (strcmp(argv[i], "-d") == 0) {
-			filedev = argv[i + 1];
+			devicename = argv[i + 1];
 			i++;
 		}
 	}
@@ -157,29 +158,29 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if (filedev == NULL) {
+	if (devicename == NULL) {
 		printf("you need give -d <dev file> \n");
 		return -1;
 	}
 
-	devhandle = open(filedev, O_RDWR);
-	if (devhandle < 0) {
-		printf("can't open file %s\n", filedev);
+	dev_fd = open(devicename, O_RDWR);
+	if (dev_fd < 0) {
+		printf("can't open file %s\n", devicename);
 		return -1;
 	}
 
-	firmwarehandle = open(firmware, O_RDONLY);
-	if (firmwarehandle < 0) {
+	fw_fd = open(firmware, O_RDONLY);
+	if (fw_fd < 0) {
 		printf("can't open file %s\n", firmware);
 		return -1;
 	}
 
-	if (stat(firmware, &filestat)) {
+	if (stat(firmware, &fw_stat)) {
 		printf("stat %s error\n", firmware);
 		return -1;
 	}
 
-	if (read(devhandle, &mbr, sizeof(mbr)) < sizeof(mbr)) {
+	if (read(dev_fd, &mbr, sizeof(mbr)) < sizeof(mbr)) {
 		printf("read block 0 fail");
 		return -1;
 	}
@@ -202,7 +203,7 @@ int main(int argc, char **argv)
 	}
 
 	/* calculate required partition size for 2 images in sectors */
-	mincount = 4 + 2 * ((filestat.st_size + 511) / 512);
+	mincount = 4 + 2 * ((fw_stat.st_size + 511) / 512);
 
 	if (mbr.partition[i].count < mincount) {
 		printf("firmare partition is too small\n");
@@ -225,13 +226,13 @@ int main(int argc, char **argv)
 	bcb.drive_info[1].tag = bcb.secondary_boot_tag;
 	bcb.drive_info[1].first_sector_number =
 	    bcb.drive_info[0].first_sector_number
-	    + ((filestat.st_size + 511) / 512);
+	    + ((fw_stat.st_size + 511) / 512);
 
 	/* convert bcb to disk byte order for writing */
 	bcb_to_disk(&bcb);
 
-	lseek(devhandle, mbr.partition[i].start * 512, SEEK_SET);
-	if (write(devhandle, &bcb, sizeof(bcb)) != sizeof(bcb)) {
+	lseek(dev_fd, mbr.partition[i].start * 512, SEEK_SET);
+	if (write(dev_fd, &bcb, sizeof(bcb)) != sizeof(bcb)) {
 		printf("write bcb error\n");
 		return -1;
 	}
@@ -239,41 +240,41 @@ int main(int argc, char **argv)
 	/* convert bcb back to host byte order */
 	bcb_to_host(&bcb);
 
-	buff = malloc(filestat.st_size);
+	buff = malloc(fw_stat.st_size);
 	if (buff == NULL) {
 		printf("malloc fail\n");
 		return -1;
 	}
 
-	if (read(firmwarehandle, buff, filestat.st_size) != filestat.st_size) {
+	if (read(fw_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
 		printf("read firmware fail\n");
 		return -1;
 	}
 
 	printf("write first firmware\n");
 
-	lseek(devhandle, bcb.drive_info[0].first_sector_number * 512, SEEK_SET);
-	if (write(devhandle, buff, filestat.st_size) != filestat.st_size) {
+	lseek(dev_fd, bcb.drive_info[0].first_sector_number * 512, SEEK_SET);
+	if (write(dev_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
 		printf("first firmware write fail\n");
 		return -1;
 	}
 
 	printf("write second firmware\n");
 
-	lseek(devhandle, bcb.drive_info[1].first_sector_number * 512, SEEK_SET);
-	if (write(devhandle, buff, filestat.st_size) != filestat.st_size) {
+	lseek(dev_fd, bcb.drive_info[1].first_sector_number * 512, SEEK_SET);
+	if (write(dev_fd, buff, fw_stat.st_size) != fw_stat.st_size) {
 		printf("second firmware write fail\n");
 		return -1;
 	}
 	free(buff);
 
-	if (fsync(devhandle) == -1) {
+	if (fsync(dev_fd) == -1) {
 		perror("fsync");
 		return -1;
 	}
 
-	close(devhandle);
-	close(firmwarehandle);
+	close(dev_fd);
+	close(fw_fd);
 	printf("done\n");
 
 	return 0;

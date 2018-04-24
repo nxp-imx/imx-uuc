@@ -31,12 +31,19 @@
 #include <inttypes.h>
 #include <errno.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 #define max(a,b) \
 	({ __typeof__ (a) _a = (a); \
 	   __typeof__ (b) _b = (b); \
 	_a > _b ? _a : _b; })
+
+#ifndef ROUND_UP
+#define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
+#endif
+
+#define __stringify_1(x...) #x
+#define __stringify(x...)   __stringify_1(x)
 
 /* size of a sector in bytes */
 #define SECTOR_SIZE 512
@@ -50,6 +57,27 @@
  * both SoCs avoiding code duplication.
  */
 #define IMAGE_OFFSET 4
+
+/* The first image always starts at IMAGE_OFFSET defined above because of MX23
+ * limitation. Second firmware image is placed after the first one, but it is
+ * aligned to keep some free space after the first firmware image.
+ * Reason for this is that we want to write the second image first with
+ * leaving the first image intact and then write the first image.
+ * This should guard at least a little bit against problems due to lost power
+ * during writing one of the images.
+ * Two cases needs to be considered:
+ * a) The new firmware image is larger than the images which are already written.
+ *    This is the good case because we would reserve more space for the first
+ *    image and start writing after the start of the existing second one.
+ * b) The new firmware image is smaller than the existing/installed images.
+ *    In this case we would begin overwriting the tail of the first image and
+ *    thus rendering it unusable. So aligning the second image is a compromise
+ *    on using minimal space vs. allow minor firmware image changes.
+ * It's user's task to estimate the firmware size variations and to
+ * tell us the desired alignment, otherwise the following default
+ * value (in kB) will be used.
+ */
+#define DEFAULT_IMAGE_ALIGNMENT 64
 
 /* Partition Table Entry */
 struct pte {
@@ -153,6 +181,7 @@ void bcb_to_disk(struct bcb *bcb)
 
 /* command line options */
 const struct option long_options[] = {
+	{ "alignment",        required_argument,   0, 'a' },
 	{ "device",           required_argument,   0, 'd' },
 	{ "firmware",         required_argument,   0, 'f' },
 	{ "help",             no_argument,         0, 'h' },
@@ -162,6 +191,7 @@ const struct option long_options[] = {
 
 /* command line help descriptions */
 const char *long_options_descs[] = {
+	"align second firmware image to given offset (default: " __stringify(DEFAULT_IMAGE_ALIGNMENT) " kB)",
 	"device to write firmware to (default: " DEFAULT_DEVICE ")",
 	"firmware file to write",
 	"print this usage and exit",
@@ -188,6 +218,20 @@ void usage(const char *progname, int exitcode)
 	exit(exitcode);
 }
 
+int parse_alignment(const char *arg)
+{
+	long int value;
+	char *endptr;
+
+	value = strtol(arg, &endptr, 0);
+	if (*endptr) {
+		fprintf(stderr, "Error: garbage after alignment value: %s\n", endptr);
+		exit(EXIT_FAILURE);
+	}
+
+	return value;
+}
+
 int main(int argc, char *argv[])
 {
 	char *devicename = DEFAULT_DEVICE;
@@ -200,15 +244,24 @@ int main(int argc, char *argv[])
 	struct stat fw_stat;
 	char *fw = NULL;
 	int i, mincount, sector_offset = max(SECTOR_COUNT(sizeof(struct bcb)), IMAGE_OFFSET);
+	int image_alignment = DEFAULT_IMAGE_ALIGNMENT; /* in kB */
+	int offset;
 
 	while (1) {
-		int c = getopt_long(argc, argv, "d:f:h", long_options, NULL);
+		int c = getopt_long(argc, argv, "a:d:f:h", long_options, NULL);
 
 		/* detect the end of the options */
 		if (c == -1)
 			break;
 
 		switch (c) {
+			case 'a':
+				image_alignment = parse_alignment(optarg);
+				if (image_alignment < 0) {
+					fprintf(stderr, "Warning: invalid alignment '%s' given, using " __stringify(DEFAULT_IMAGE_ALIGNMENT) " instead.\n", optarg);
+					image_alignment = DEFAULT_IMAGE_ALIGNMENT;
+				}
+				break;
 			case 'd':
 				devicename = optarg;
 				break;
@@ -285,15 +338,23 @@ int main(int argc, char *argv[])
 	}
 
 	/* we assume that we want to have at least two images of the same size
-	 * in the bootstream partition (plus the first sector containing the BCB
-	 * combined with our desired offset to boot on i.MX23/i.MX28 likewise);
-	 * so calculate the required minimum partition size (in sectors a 512 byte)
+	 * in the bootstream partition, plus the first sector containing the BCB
+	 * combined with our desired offset to boot on i.MX23/i.MX28 likewise, plus
+	 * the space we use due to image alignment;
+	 * so calculate the required minimum partition size mincount (in sectors a 512 byte)
 	 */
-	mincount = sector_offset + 2 * SECTOR_COUNT(fw_stat.st_size);
+	offset = sector_offset * SECTOR_SIZE + fw_stat.st_size;
+	if (image_alignment > 0)
+		offset = ROUND_UP(offset, image_alignment * 1024);
+	else
+		offset = ROUND_UP(offset, SECTOR_SIZE);
+
+	mincount = SECTOR_COUNT(offset + fw_stat.st_size);
 
 	if (part->count < mincount) {
 		fprintf(stderr, "Bootstream partition is too small with %" PRIu32 " sectors.\n", part->count);
-		fprintf(stderr, "With two instances of this firmware we require at least %d sectors.\n", mincount);
+		fprintf(stderr, "With two instances of this firmware and firmware alignment to %d kB,\n", image_alignment);
+		fprintf(stderr, "we require at least %d sectors (or %d kB).\n", mincount, mincount * SECTOR_SIZE / 1024);
 		goto unmap_out;
 	}
 
@@ -308,7 +369,7 @@ int main(int argc, char *argv[])
 	bcb.drive_info[0].drive_type = 0;
 	bcb.drive_info[0].tag = bcb.primary_boot_tag;
 	bcb.drive_info[0].first_sector_number = part->start + sector_offset;
-	bcb.drive_info[0].sector_count = SECTOR_COUNT(fw_stat.st_size);
+	bcb.drive_info[0].sector_count = SECTOR_COUNT(offset) - sector_offset;
 
 	bcb.drive_info[1].chip_num = 0;
 	bcb.drive_info[1].drive_type = 0;
@@ -318,8 +379,12 @@ int main(int argc, char *argv[])
 	bcb.drive_info[1].sector_count = SECTOR_COUNT(fw_stat.st_size);
 
 #if DEBUG == 1
-	fprintf(stderr, "1st bootstream start sector: %" PRIu32 "\n", bcb.drive_info[0].first_sector_number);
-	fprintf(stderr, "2nd bootstream start sector: %" PRIu32 "\n", bcb.drive_info[1].first_sector_number);
+	fprintf(stderr, "1st bootstream:\n");
+	fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[0].first_sector_number);
+	fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[0].sector_count);
+	fprintf(stderr, "2nd bootstream:\n");
+	fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[1].first_sector_number);
+	fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[1].sector_count);
 #endif
 
 	/* convert bcb to disk byte order for writing */

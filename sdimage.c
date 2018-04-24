@@ -31,8 +31,6 @@
 #include <inttypes.h>
 #include <errno.h>
 
-#define DEBUG 1
-
 #define max(a,b) \
 	({ __typeof__ (a) _a = (a); \
 	   __typeof__ (b) _b = (b); \
@@ -184,6 +182,7 @@ const struct option long_options[] = {
 	{ "alignment",        required_argument,   0, 'a' },
 	{ "device",           required_argument,   0, 'd' },
 	{ "firmware",         required_argument,   0, 'f' },
+	{ "verbose",          no_argument,         0, 'v' },
 	{ "help",             no_argument,         0, 'h' },
 	/* stop condition for iterator */
 	{ NULL,               0,                   0,   0 },
@@ -194,6 +193,7 @@ const char *long_options_descs[] = {
 	"align second firmware image to given offset (default: " __stringify(DEFAULT_IMAGE_ALIGNMENT) " kB)",
 	"device to write firmware to (default: " DEFAULT_DEVICE ")",
 	"firmware file to write",
+	"be verbose in what's going on",
 	"print this usage and exit",
 	/* stop condition for iterator */
 	NULL
@@ -246,9 +246,10 @@ int main(int argc, char *argv[])
 	int i, mincount, sector_offset = max(SECTOR_COUNT(sizeof(struct bcb)), IMAGE_OFFSET);
 	int image_alignment = DEFAULT_IMAGE_ALIGNMENT; /* in kB */
 	int offset;
+	int verbose = 0;
 
 	while (1) {
-		int c = getopt_long(argc, argv, "a:d:f:h", long_options, NULL);
+		int c = getopt_long(argc, argv, "a:d:f:vh", long_options, NULL);
 
 		/* detect the end of the options */
 		if (c == -1)
@@ -267,6 +268,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'f':
 				firmware = optarg;
+				break;
+			case 'v':
+				verbose = 1;
 				break;
 			case 'h':
 			case '?':
@@ -298,9 +302,9 @@ int main(int argc, char *argv[])
 		goto close_out;
 	}
 
-#if DEBUG == 1
-	fprintf(stderr, "Firmware size: %ld bytes, %ld sectors\n", fw_stat.st_size, SECTOR_COUNT(fw_stat.st_size));
-#endif
+	if (verbose) {
+		printf("Firmware size: %ld bytes, %ld sectors\n", fw_stat.st_size, SECTOR_COUNT(fw_stat.st_size));
+	}
 
 	/* open target device and read MBR with partition table */
 	dev_fd = open(devicename, O_RDWR);
@@ -328,6 +332,10 @@ int main(int argc, char *argv[])
 	for (i = 0; i < 4; i++) {
 		if (mbr.partition[i].type == 'S') {
 			part = &mbr.partition[i];
+			if (verbose) {
+				printf("Bootstream partition found: partition %d, start=%" PRIu32 " length=%" PRIu32 " (sectors)\n",
+				       i, part->start, part->count);
+			}
 			break;
 		}
 	}
@@ -378,14 +386,14 @@ int main(int argc, char *argv[])
 	    bcb.drive_info[0].first_sector_number + bcb.drive_info[0].sector_count;
 	bcb.drive_info[1].sector_count = SECTOR_COUNT(fw_stat.st_size);
 
-#if DEBUG == 1
-	fprintf(stderr, "1st bootstream:\n");
-	fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[0].first_sector_number);
-	fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[0].sector_count);
-	fprintf(stderr, "2nd bootstream:\n");
-	fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[1].first_sector_number);
-	fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[1].sector_count);
-#endif
+	if (verbose) {
+		fprintf(stderr, "1st bootstream:\n");
+		fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[0].first_sector_number);
+		fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[0].sector_count);
+		fprintf(stderr, "2nd bootstream:\n");
+		fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[1].first_sector_number);
+		fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[1].sector_count);
+	}
 
 	/* convert bcb to disk byte order for writing */
 	bcb_to_disk(&bcb);
@@ -417,6 +425,10 @@ int main(int argc, char *argv[])
 		goto unmap_out;
 	} else {
 		printf("ok.\n");
+	}
+
+	if (verbose) {
+		printf("Syncing %s...", devicename);
 	}
 
 	if (fsync(dev_fd) == -1) {

@@ -33,11 +33,23 @@
 
 #define DEBUG 0
 
+#define max(a,b) \
+	({ __typeof__ (a) _a = (a); \
+	   __typeof__ (b) _b = (b); \
+	_a > _b ? _a : _b; })
+
 /* size of a sector in bytes */
 #define SECTOR_SIZE 512
 
 /* calculate the count of required sectors for given byte size */
 #define SECTOR_COUNT(x) (((x) + SECTOR_SIZE - 1) / SECTOR_SIZE)
+
+/* The MX23 Boot ROM does blindly load from 2048 offset while the MX28
+ * does parse the BCB header to known where to load the image from.
+ * We start the image at 4 sectors offset so same code can be used by
+ * both SoCs avoiding code duplication.
+ */
+#define IMAGE_OFFSET 4
 
 /* Partition Table Entry */
 struct pte {
@@ -187,7 +199,7 @@ int main(int argc, char *argv[])
 	int dev_fd = -1, fw_fd = -1;
 	struct stat fw_stat;
 	char *fw = NULL;
-	int i, mincount, sector_offset = SECTOR_COUNT(sizeof(struct bcb));
+	int i, mincount, sector_offset = max(SECTOR_COUNT(sizeof(struct bcb)), IMAGE_OFFSET);
 
 	while (1) {
 		int c = getopt_long(argc, argv, "d:f:h", long_options, NULL);
@@ -273,10 +285,11 @@ int main(int argc, char *argv[])
 	}
 
 	/* we assume that we want to have at least two images of the same size
-	 * in the bootstream partition, plus the first sector containing the BCB;
+	 * in the bootstream partition (plus the first sector containing the BCB
+	 * combined with our desired offset to boot on i.MX23/i.MX28 likewise);
 	 * so calculate the required minimum partition size (in sectors a 512 byte)
 	 */
-	mincount = SECTOR_COUNT(sizeof(struct bcb)) + 2 * SECTOR_COUNT(fw_stat.st_size);
+	mincount = sector_offset + 2 * SECTOR_COUNT(fw_stat.st_size);
 
 	if (part->count < mincount) {
 		fprintf(stderr, "Bootstream partition is too small with %" PRIu32 " sectors.\n", part->count);

@@ -195,7 +195,7 @@ const char *long_options_descs[] = {
 	"align second firmware image to given offset (default: " __stringify(DEFAULT_IMAGE_ALIGNMENT) " kB)",
 	"device to write firmware to (default: " DEFAULT_DEVICE ")",
 	"firmware file to write",
-	"be verbose in what's going on",
+	"be verbose in what's going on (give twice to print debug messages)",
 	"print this usage and exit",
 	/* stop condition for iterator */
 	NULL
@@ -272,7 +272,7 @@ int main(int argc, char *argv[])
 				firmware = optarg;
 				break;
 			case 'v':
-				verbose = 1;
+				verbose += 1;
 				break;
 			case 'h':
 			case '?':
@@ -304,7 +304,7 @@ int main(int argc, char *argv[])
 		goto close_out;
 	}
 
-	if (verbose) {
+	if (verbose > 1) {
 		printf("Firmware size: %ld bytes, %ld sectors\n", fw_stat.st_size, SECTOR_COUNT(fw_stat.st_size));
 	}
 
@@ -334,7 +334,7 @@ int main(int argc, char *argv[])
 	for (i = 0; i < 4; i++) {
 		if (mbr.partition[i].type == 'S') {
 			part = &mbr.partition[i];
-			if (verbose) {
+			if (verbose > 1) {
 				printf("Bootstream partition found: partition %d, start=%" PRIu32 " length=%" PRIu32 " (sectors)\n",
 				       i, part->start, part->count);
 			}
@@ -389,7 +389,7 @@ int main(int argc, char *argv[])
 		bcb.drive_info[0].first_sector_number + bcb.drive_info[0].sector_count;
 	bcb.drive_info[1].sector_count = SECTOR_COUNT(fw_stat.st_size);
 
-	if (verbose) {
+	if (verbose > 1) {
 		fprintf(stderr, "1st bootstream:\n");
 		fprintf(stderr, "\tstart sector: %" PRIu32 "\n", bcb.drive_info[0].first_sector_number);
 		fprintf(stderr, "\tsector count: %" PRIu32 "\n", bcb.drive_info[0].sector_count);
@@ -427,11 +427,17 @@ int main(int argc, char *argv[])
 	/* convert bcb back to host byte order */
 	bcb_to_host(&bcb);
 
-	printf("Writing second firmware... ");
+	if (verbose) {
+		printf("Writing second firmware... ");
+	}
 
 	lseek(dev_fd, bcb.drive_info[1].first_sector_number * SECTOR_SIZE, SEEK_SET);
 	if (write(dev_fd, fw, fw_stat.st_size) != fw_stat.st_size) {
-		printf("failed: %s\n", strerror(errno));
+		if (verbose) {
+			printf("failed: %s\n", strerror(errno));
+		} else {
+			fprintf(stderr, "Writing second firmware failed: %s\n", strerror(errno));
+		}
 		goto unmap_out;
 	} else {
 		if (fsync(dev_fd) == -1) {
@@ -439,14 +445,22 @@ int main(int argc, char *argv[])
 			goto unmap_out;
 		}
 
-		printf("ok.\n");
+		if (verbose) {
+			printf("ok.\n");
+		}
 	}
 
-	printf("Writing first firmware... ");
+	if (verbose) {
+		printf("Writing first firmware... ");
+	}
 
 	lseek(dev_fd, bcb.drive_info[0].first_sector_number * SECTOR_SIZE, SEEK_SET);
 	if (write(dev_fd, fw, fw_stat.st_size) != fw_stat.st_size) {
-		printf("failed: %s\n", strerror(errno));
+		if (verbose) {
+			printf("failed: %s\n", strerror(errno));
+		} else {
+			fprintf(stderr, "Writing first firmware failed: %s\n", strerror(errno));
+		}
 		goto unmap_out;
 	} else {
 		if (fsync(dev_fd) == -1) {
@@ -454,7 +468,9 @@ int main(int argc, char *argv[])
 			goto unmap_out;
 		}
 
-		printf("ok.\n");
+		if (verbose) {
+			printf("ok.\n");
+		}
 	}
 
 	rv = EXIT_SUCCESS;

@@ -110,6 +110,8 @@ struct drive_info {                         /* Comments from i.MX28 RM:         
  */
 #define MAX_DI_COUNT 2
 
+#define BCB_SIGNATURE 0x00112233
+
 /* Boot Control Block (BCB) Data Structure */
 struct bcb {                                /* (Analogous) Comments from i.MX28 RM:        */
 	uint32_t signature;                 /* signature 0x00112233                        */
@@ -366,9 +368,10 @@ int main(int argc, char *argv[])
 		goto unmap_out;
 	}
 
-	/* init bcb */
+
+	/* create BCB */
 	memset(&bcb, 0, sizeof(bcb));
-	bcb.signature = 0x00112233;
+	bcb.signature = BCB_SIGNATURE;
 	bcb.primary_boot_tag = 1;
 	bcb.secondary_boot_tag = 2;
 	bcb.num_copies = 2;
@@ -383,7 +386,7 @@ int main(int argc, char *argv[])
 	bcb.drive_info[1].drive_type = 0;
 	bcb.drive_info[1].tag = bcb.secondary_boot_tag;
 	bcb.drive_info[1].first_sector_number =
-	    bcb.drive_info[0].first_sector_number + bcb.drive_info[0].sector_count;
+		bcb.drive_info[0].first_sector_number + bcb.drive_info[0].sector_count;
 	bcb.drive_info[1].sector_count = SECTOR_COUNT(fw_stat.st_size);
 
 	if (verbose) {
@@ -398,24 +401,31 @@ int main(int argc, char *argv[])
 	/* convert bcb to disk byte order for writing */
 	bcb_to_disk(&bcb);
 
+	if (verbose) {
+		printf("Updating BCB... ");
+	}
+
 	lseek(dev_fd, part->start * SECTOR_SIZE, SEEK_SET);
 	if (write(dev_fd, &bcb, sizeof(bcb)) != sizeof(bcb)) {
-		fprintf(stderr, "Writing BCB to '%s' failed: %s\n", devicename, strerror(errno));
+		if (verbose) {
+			printf("failed: %s\n", strerror(errno));
+		} else {
+			fprintf(stderr, "Writing BCB to '%s' failed: %s\n", devicename, strerror(errno));
+		}
+		goto unmap_out;
+	} else {
+		if (verbose) {
+			printf("ok.\n");
+		}
+	}
+
+	if (fsync(dev_fd) == -1) {
+		fprintf(stderr, "fsync(%s) failed: %s\n", devicename, strerror(errno));
 		goto unmap_out;
 	}
 
 	/* convert bcb back to host byte order */
 	bcb_to_host(&bcb);
-
-	printf("Writing first firmware... ");
-
-	lseek(dev_fd, bcb.drive_info[0].first_sector_number * SECTOR_SIZE, SEEK_SET);
-	if (write(dev_fd, fw, fw_stat.st_size) != fw_stat.st_size) {
-		printf("failed: %s\n", strerror(errno));
-		goto unmap_out;
-	} else {
-		printf("ok.\n");
-	}
 
 	printf("Writing second firmware... ");
 
@@ -424,16 +434,27 @@ int main(int argc, char *argv[])
 		printf("failed: %s\n", strerror(errno));
 		goto unmap_out;
 	} else {
+		if (fsync(dev_fd) == -1) {
+			fprintf(stderr, "fsync(%s) failed: %s\n", devicename, strerror(errno));
+			goto unmap_out;
+		}
+
 		printf("ok.\n");
 	}
 
-	if (verbose) {
-		printf("Syncing %s...", devicename);
-	}
+	printf("Writing first firmware... ");
 
-	if (fsync(dev_fd) == -1) {
-		fprintf(stderr, "fsync(%s) failed: %s\n", devicename, strerror(errno));
+	lseek(dev_fd, bcb.drive_info[0].first_sector_number * SECTOR_SIZE, SEEK_SET);
+	if (write(dev_fd, fw, fw_stat.st_size) != fw_stat.st_size) {
+		printf("failed: %s\n", strerror(errno));
 		goto unmap_out;
+	} else {
+		if (fsync(dev_fd) == -1) {
+			fprintf(stderr, "fsync(%s) failed: %s\n", devicename, strerror(errno));
+			goto unmap_out;
+		}
+
+		printf("ok.\n");
 	}
 
 	rv = EXIT_SUCCESS;

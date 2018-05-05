@@ -208,6 +208,7 @@ int g_pid = -1;
 int g_ep_sink = -1;
 int g_ep_source = -1;
 int g_ep_0 = -1;
+int g_open_file = -1;
 
 int send_data(void *p, size_t size)
 {
@@ -253,8 +254,8 @@ int handle_cmd(const char *cmd)
 
 		close(out);
 
-	} else 	if(strncmp(cmd, "UOCmd:", 6) == 0) {
-                printf("run shell cmd: %s\n", cmd + 6);
+	} else 	if(strncmp(cmd, "ACmd:", 5) == 0) {
+                printf("run shell cmd: %s\n", cmd + 5);
 		g_pid = popen2(cmd + 6, &g_stdin, &g_stdout);
 		if (g_pid < 0) {
                         printf("Failure excecu cmd: %s\n", cmd+6);
@@ -263,9 +264,10 @@ int handle_cmd(const char *cmd)
                         strcpy(fm.data, "Failure to folk process");
 		}
 		fm.key = OKAY;
+		g_open_file = g_stdin;
 		send_data(&fm, 4);
 
-	} else if(strncmp(cmd, "Uflush", 6) == 0) {
+	} else if(strncmp(cmd, "Sync", 4) == 0) {
 		printf("wait for async proccess finish\n");
 		do {
 			p = waitpid(g_pid, &pstat, 0);
@@ -276,7 +278,45 @@ int handle_cmd(const char *cmd)
 
 		close(g_stdin);
 		close(g_stdout);
+		g_open_file = -1;
 		g_stdin = g_stdout = -1;
+
+	} else if(strncmp(cmd, "WOpen:", 5) == 0) {
+		if(cmd[6] == '-')
+			g_open_file = g_stdin;
+		else
+			g_open_file = open(cmd + 5, O_WRONLY | O_CREAT);
+
+		if (g_open_file < 0)
+			fm.key = FAIL;
+		else
+			fm.key = OKAY;
+		send_data(&fm, 4);
+
+	} else if(strncmp(cmd, "ROpen:", 5) == 0) {
+		size_t size = 0;
+		struct stat st;
+		if(cmd[6] == '-') {
+			g_open_file = g_stdout;
+		} else {
+			g_open_file = open(cmd + 5, O_RDONLY);
+			memset(&st, 0, sizeof(st));
+			stat(cmd + 5, &st);
+			size = st.st_size;
+			sprintf(fm.data, "%016lX", size);
+		}
+
+		if (g_open_file <0)
+			fm.key = FAIL;
+		else
+			fm.key = OKAY;
+		send_data(&fm, 4);
+
+	} else if (strncmp(cmd, "Close", 5)) {
+		close(g_open_file);
+		g_open_file = -1;
+		fm.key = OKAY;
+		send_data(&fm, 4);
 
 	} else if(strncmp(cmd, "donwload:", 8) == 0) {
 		uint32_t size;
@@ -304,7 +344,29 @@ int handle_cmd(const char *cmd)
 		send_data(&fm, 4);
 
 	} else if(strncmp(cmd, "upload", 6) == 0) {
-
+		int max = 0x100000;
+		void * p = malloc(max);
+		int ret  = 0;
+		if (p == NULL) {
+			fm.key = FAIL;
+			send_data(&fm, 4);
+		} else {
+			ret = read(g_open_file, p, max);
+			if(ret < 0) {
+				fm.key = FAIL;
+				send_data(&fm, 4);
+			} else {
+				fm.key = DATA;
+				sprintf(fm.data, "%08X", ret);
+				send_data(&fm, 8);
+				send_data(p, ret);
+				fm.key = OKAY;
+				send_data(&fm, 4);
+			}
+		}
+		free(p);
+	} else {
+		printf("Unknow Cmd %s\n", cmd);
 	}
 }
 

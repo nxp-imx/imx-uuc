@@ -29,12 +29,21 @@ struct usb_fs_desc{
         __le32 fs_count;
         __le32 hs_count;
 	__le32 ss_count;
+	__le32 os_count;
         struct {
                 struct usb_interface_descriptor intf;
                 struct usb_endpoint_descriptor_no_audio sink;
                 struct usb_endpoint_descriptor_no_audio source;
-        } __attribute__((packed)) fs_descs, hs_descs, ss_descs
-	;
+        } __attribute__((packed)) fs_descs, hs_descs;
+	struct {
+    		struct usb_interface_descriptor intf;
+    		struct usb_endpoint_descriptor_no_audio source;
+    		struct usb_ss_ep_comp_descriptor source_comp;
+    		struct usb_endpoint_descriptor_no_audio sink;
+    		struct usb_ss_ep_comp_descriptor sink_comp;
+	} __attribute__((packed)) ss_descs;
+	struct usb_os_desc_header os_header;
+	struct usb_ext_compat_desc os_desc;
 };
 
 #define STR_INTERFACE_ "utp"
@@ -59,12 +68,14 @@ static const struct {
 };
 
 #pragma pack()
+
 static const struct usb_fs_desc g_descriptors = {
         .header = {
                 .magic = cpu_to_le32(FUNCTIONFS_DESCRIPTORS_MAGIC_V2),
                 .flags = cpu_to_le32(FUNCTIONFS_HAS_FS_DESC |
                                      FUNCTIONFS_HAS_HS_DESC |
-				     FUNCTIONFS_HAS_SS_DESC
+				     FUNCTIONFS_HAS_SS_DESC |
+				     FUNCTIONFS_HAS_MS_OS_DESC
 				    ),
                 .length = cpu_to_le32(sizeof g_descriptors),
         },
@@ -116,7 +127,7 @@ static const struct usb_fs_desc g_descriptors = {
                         .bInterval = 1, /* NAK every 1 uframe */
                 },
         },
-	.ss_count = cpu_to_le32(3),
+	.ss_count = cpu_to_le32(5),
         .ss_descs = {
                 .intf = {
                         .bLength = sizeof g_descriptors.ss_descs.intf,
@@ -132,6 +143,10 @@ static const struct usb_fs_desc g_descriptors = {
                         .bmAttributes = USB_ENDPOINT_XFER_BULK,
                         .wMaxPacketSize = cpu_to_le16(1024),
                 },
+		.sink_comp = {
+			.bLength = sizeof(g_descriptors.ss_descs.sink_comp),
+			.bDescriptorType = USB_DT_SS_ENDPOINT_COMP,
+		},
                 .source = {
                         .bLength = sizeof g_descriptors.ss_descs.source,
                         .bDescriptorType = USB_DT_ENDPOINT,
@@ -140,7 +155,28 @@ static const struct usb_fs_desc g_descriptors = {
                         .wMaxPacketSize = cpu_to_le16(1024),
                         .bInterval = 1, /* NAK every 1 uframe */
                 },
+		.source_comp = {
+			.bLength = sizeof(g_descriptors.ss_descs.source_comp),
+			.bDescriptorType = USB_DT_SS_ENDPOINT_COMP,
+		},
         },
+	.os_count = cpu_to_le32(1),
+	.os_header = {
+		.interface = cpu_to_le32(1),
+		.dwLength = cpu_to_le32(sizeof(g_descriptors.os_header)
+				        + sizeof(g_descriptors.os_desc)),
+		.bcdVersion = cpu_to_le32(1),
+		.wIndex = cpu_to_le32(4),
+		.bCount = cpu_to_le32(1),
+		.Reserved = cpu_to_le32(0),
+	},
+	.os_desc = {
+		.bFirstInterfaceNumber = 0,
+		.Reserved1 = cpu_to_le32(1),
+		.CompatibleID = {'M','S','F','T','1','0','0',0},
+		.SubCompatibleID = {0},
+		.Reserved2 = {0},
+	},
 };
 
 pid_t popen2(const char *command, int *infp, int *outfp)

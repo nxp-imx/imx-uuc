@@ -29,7 +29,7 @@ function launch_uuc() {
 	mkdir /sys/kernel/config/usb_gadget/$1
 	cd /sys/kernel/config/usb_gadget/$1
 	echo 0x066F > idVendor
-	echo 0x37FF > idProduct
+	echo 0x9AFF > idProduct
 	mkdir strings/0x409
 
 	if [ -e /sys/devices/soc0/soc_uid ]; then
@@ -55,7 +55,7 @@ function launch_uuc() {
 	ln -s configs/c.1 os_desc
 
 	mkdir functions/mass_storage.1
-#	ln -s functions/mass_storage.1 configs/c.1/
+	ln -s functions/mass_storage.1 configs/c.1/
 	echo /fat > functions/mass_storage.1/lun.0/file
 
 	ufb /dev/usb-utp$2/ep0 &

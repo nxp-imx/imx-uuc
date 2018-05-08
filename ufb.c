@@ -36,11 +36,11 @@ struct usb_fs_desc{
                 struct usb_endpoint_descriptor_no_audio source;
         } __attribute__((packed)) fs_descs, hs_descs;
 	struct {
-    		struct usb_interface_descriptor intf;
-    		struct usb_endpoint_descriptor_no_audio source;
-    		struct usb_ss_ep_comp_descriptor source_comp;
-    		struct usb_endpoint_descriptor_no_audio sink;
-    		struct usb_ss_ep_comp_descriptor sink_comp;
+		struct usb_interface_descriptor intf;
+		struct usb_endpoint_descriptor_no_audio sink;
+		struct usb_ss_ep_comp_descriptor sink_comp;
+		struct usb_endpoint_descriptor_no_audio source;
+		struct usb_ss_ep_comp_descriptor source_comp;
 	} __attribute__((packed)) ss_descs;
 	struct usb_os_desc_header os_header;
 	struct usb_ext_compat_desc os_desc;
@@ -173,7 +173,7 @@ static const struct usb_fs_desc g_descriptors = {
 	.os_desc = {
 		.bFirstInterfaceNumber = 0,
 		.Reserved1 = cpu_to_le32(1),
-		.CompatibleID = {'M','S','F','T','1','0','0',0},
+		.CompatibleID = {'W','I','N','U','S','B',0,0},
 		.SubCompatibleID = {0},
 		.Reserved2 = {0},
 	},

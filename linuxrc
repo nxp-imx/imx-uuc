@@ -44,13 +44,18 @@ function launch_uuc() {
 
 	echo ffs.utp$2
 
+	echo 1 > os_desc/use
+	echo "MSFT100" > os_desc/qw_sign
+	echo 0x40 > os_desc/b_vendor_code
+
 	mkdir functions/ffs.utp$2
 	mkdir /dev/usb-utp$2
 	mount -t functionfs utp$2 /dev/usb-utp$2
 	ln -s functions/ffs.utp$2 configs/c.1/
+	ln -s configs/c.1 os_desc
 
 	mkdir functions/mass_storage.1
-	ln -s functions/mass_storage.1 configs/c.1/
+#	ln -s functions/mass_storage.1 configs/c.1/
 	echo /fat > functions/mass_storage.1/lun.0/file
 
 	ufb /dev/usb-utp$2/ep0 &

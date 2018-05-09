@@ -346,24 +346,27 @@ int handle_cmd(const char *cmd)
 		send_data(&fm, rs);
 
 	} else if(strncmp(cmd, "ROpen:", 6) == 0) {
-		printf("%s\n", cmd);
+		printf("ROpen: %s\n", cmd + 6);
 		size_t size = 0;
 		struct stat st;
-		if(cmd[7] == '-') {
+		int rz = 4;
+		if(cmd[6] == '-') {
 			g_open_file = g_stdout;
 		} else {
-			g_open_file = open(cmd + 7, O_RDONLY);
+			const char *file = cmd + 6;
+			g_open_file = open(file, O_RDONLY);
 			memset(&st, 0, sizeof(st));
-			stat(cmd + 5, &st);
+			stat(file, &st);
 			size = st.st_size;
 			sprintf(fm.data, "%016lX", size);
+			rz = 4 + strlen(fm.data);
 		}
 
 		if (g_open_file <0)
 			fm.key = FAIL;
 		else
 			fm.key = OKAY;
-		send_data(&fm, 4);
+		send_data(&fm, rz);
 
 	} else if (strncmp(cmd, "Close", 5) == 0) {
 		close(g_open_file);
@@ -389,7 +392,7 @@ int handle_cmd(const char *cmd)
 		}
 
 		sprintf(fm.data, "%08X", size);
-		send_data(&fm, 8);
+		send_data(&fm, 4 + strlen(fm.data));
 
 		if(read(g_ep_source, p, size) < 0)
 			fm.key = FAIL;
@@ -408,7 +411,7 @@ int handle_cmd(const char *cmd)
 		send_data(&fm, 4);
 
 	} else if(strncmp(cmd, "upload", 6) == 0) {
-		int max = 0x100000;
+		int max = 0x10000;
 		void * p = malloc(max);
 		printf(".");
 		int ret  = 0;
@@ -423,7 +426,7 @@ int handle_cmd(const char *cmd)
 			} else {
 				fm.key = DATA;
 				sprintf(fm.data, "%08X", ret);
-				send_data(&fm, 8);
+				send_data(&fm, 12);
 				send_data(p, ret);
 				fm.key = OKAY;
 				send_data(&fm, 4);

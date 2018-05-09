@@ -317,25 +317,42 @@ int handle_cmd(const char *cmd)
 		g_open_file = -1;
 		g_stdin = g_stdout = -1;
 
-	} else if(strncmp(cmd, "WOpen:", 5) == 0) {
-		if(cmd[6] == '-')
+	} else if(strncmp(cmd, "WOpen:", 6) == 0) {
+		int rs = 4;
+		printf("WOpen:%s\n", cmd + 6);
+		if(cmd[6] == '-') {
 			g_open_file = g_stdin;
-		else
-			g_open_file = open(cmd + 5, O_WRONLY | O_CREAT);
-
+		}
+		else {
+			const char *file = cmd + 6;
+			struct stat st;
+			if(stat(file, &st)) {
+				g_open_file = open(file, O_WRONLY | O_CREAT,
+					S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+			} else {
+				if(st.st_mode & S_IFDIR) {
+					g_open_file = -1;
+					sprintf(fm.data, "%s", "DIR");
+					rs = 7;
+				} else {
+					g_open_file = open(file, O_WRONLY | O_CREAT);
+				}
+			}
+		}
 		if (g_open_file < 0)
 			fm.key = FAIL;
 		else
 			fm.key = OKAY;
-		send_data(&fm, 4);
+		send_data(&fm, rs);
 
-	} else if(strncmp(cmd, "ROpen:", 5) == 0) {
+	} else if(strncmp(cmd, "ROpen:", 6) == 0) {
+		printf("%s\n", cmd);
 		size_t size = 0;
 		struct stat st;
-		if(cmd[6] == '-') {
+		if(cmd[7] == '-') {
 			g_open_file = g_stdout;
 		} else {
-			g_open_file = open(cmd + 5, O_RDONLY);
+			g_open_file = open(cmd + 7, O_RDONLY);
 			memset(&st, 0, sizeof(st));
 			stat(cmd + 5, &st);
 			size = st.st_size;
@@ -348,33 +365,44 @@ int handle_cmd(const char *cmd)
 			fm.key = OKAY;
 		send_data(&fm, 4);
 
-	} else if (strncmp(cmd, "Close", 5)) {
+	} else if (strncmp(cmd, "Close", 5) == 0) {
 		close(g_open_file);
 		g_open_file = -1;
 		fm.key = OKAY;
 		send_data(&fm, 4);
 
-	} else if(strncmp(cmd, "donwload:", 8) == 0) {
+	} else if(strncmp(cmd, "donwload:", 9) == 0) {
 		uint32_t size;
-		size = strtoul(cmd +8, NULL, 16);
+		ssize_t rs;
+
+		fm.key = OKAY;
+
+		size = strtoul(cmd + 9, NULL, 16);
 
 		void *p = malloc(size);
-		if(p)
+		if(p) {
 			fm.key = DATA;
-		else
+		} else {
 			fm.key = FAIL;
+			send_data(&fm, 4);
+			return -1;
+		}
+
 		sprintf(fm.data, "%08X", size);
 		send_data(&fm, 8);
 
-		read(g_ep_source, p, size);
-		write(g_stdin, p, size);
+		if(read(g_ep_source, p, size) < 0)
+			fm.key = FAIL;
+
+		if(write(g_open_file, p, size) < 0)
+			fm.key = FAIL;
 
 		free(p);
 
 		memset(&fm, 0, sizeof(fm));
-                while((size = read(g_stdout, fm.data, MAX_FRAME_DATA_SIZE))> 0) {
+                while((rs = read(g_stdout, fm.data, MAX_FRAME_DATA_SIZE))> 0) {
                         fm.key = INFO;
-                        send_data(&fm, size + 4);
+                        send_data(&fm, rs + 4);
                 }
 		fm.key = OKAY;
 		send_data(&fm, 4);
@@ -382,6 +410,7 @@ int handle_cmd(const char *cmd)
 	} else if(strncmp(cmd, "upload", 6) == 0) {
 		int max = 0x100000;
 		void * p = malloc(max);
+		printf(".");
 		int ret  = 0;
 		if (p == NULL) {
 			fm.key = FAIL;

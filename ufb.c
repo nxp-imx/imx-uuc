@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 #include <linux/usb/functionfs.h>
 
@@ -264,6 +266,11 @@ int handle_cmd(const char *cmd)
 	int size;
 	int p;
 	int pstat;
+	int flags;
+	struct timeval tv;
+	fd_set rfds;
+	tv.tv_sec = 0;
+	tv.tv_usec = 50000;
 
 	if(strncmp(cmd, "UCmd:", 5) == 0)
 	{
@@ -277,15 +284,34 @@ int handle_cmd(const char *cmd)
 			return -1;
 		}
 		memset(&fm, 0, sizeof(fm));
-		while((size = read(out, fm.data, MAX_FRAME_DATA_SIZE))> 0) {
-			fm.key = INFO;
-			send_data(&fm, size + 4);
-		}
-		do {
-			p = waitpid(pid, &pstat, 0);
-		} while (p == -1 && errno == EINTR);
 
-		fm.key = pstat? FAIL : OKAY;
+		flags = fcntl(out, F_GETFL);
+		flags |= O_NONBLOCK;
+		if (fcntl(out, F_SETFL, flags)) {
+			printf("fctl failure\n");
+			return -1;
+		}
+
+		FD_ZERO(&rfds);
+		FD_SET(out, &rfds);
+		do {
+			int retval;
+			p = waitpid(pid, &pstat, WNOHANG);
+			retval = select(out + 1, &rfds, NULL, NULL, &tv);
+			do {
+				size = read(out, fm.data, MAX_FRAME_DATA_SIZE);
+				if( size >= 0 ) {
+					fm.key = INFO;
+					send_data(&fm, size + 4);
+				}
+			} while(size == MAX_FRAME_DATA_SIZE);
+
+			fm.key = INFO;
+			send_data(&fm, 4);
+
+		} while(p == 0);
+
+		fm.key = WEXITSTATUS (pstat) ? FAIL : OKAY;
 		send_data(&fm, 4);
 
 		close(out);
@@ -305,11 +331,26 @@ int handle_cmd(const char *cmd)
 
 	} else if(strncmp(cmd, "Sync", 4) == 0) {
 		printf("wait for async proccess finish\n");
+		FD_ZERO(&rfds);
+		FD_SET(g_stdout, &rfds);
 		do {
-			p = waitpid(g_pid, &pstat, 0);
-		} while (p == -1 && errno == EINTR);
+			int retval;
+			p = waitpid(pid, &pstat, WNOHANG);
+			if(g_stdout >= 0) {
+				retval = select(g_stdout + 1, &rfds, NULL, NULL, &tv);
+				do {
+					size = read(g_stdout, fm.data, MAX_FRAME_DATA_SIZE);
+					if( size >= 0 ) {
+						fm.key = INFO;
+						send_data(&fm, size + 4);
+					}
+				} while(size == MAX_FRAME_DATA_SIZE);
+			}
+			fm.key = INFO;
+			send_data(&fm, 4);
+		} while(p == 0);
 
-		fm.key = pstat? FAIL: OKAY;
+		fm.key = WEXITSTATUS (pstat) ? FAIL : OKAY;
 		send_data(&fm, 4);
 
 		close(g_stdin);
@@ -403,10 +444,19 @@ int handle_cmd(const char *cmd)
 		free(p);
 
 		memset(&fm, 0, sizeof(fm));
-                while((rs = read(g_stdout, fm.data, MAX_FRAME_DATA_SIZE))> 0) {
-                        fm.key = INFO;
-                        send_data(&fm, rs + 4);
-                }
+
+		if(g_stdout >= 0) {
+			flags = fcntl(g_stdout, F_GETFL);
+			flags |= O_NONBLOCK;
+			if (fcntl(g_stdout, F_SETFL, flags)) {
+				printf("fctl failure\n");
+				return -1;
+			}
+			while((rs = read(g_stdout, fm.data, MAX_FRAME_DATA_SIZE))> 0) {
+				fm.key = INFO;
+				send_data(&fm, rs + 4);
+			}
+		}
 		fm.key = OKAY;
 		send_data(&fm, 4);
 

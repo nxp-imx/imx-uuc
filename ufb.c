@@ -257,6 +257,53 @@ int send_data(void *p, size_t size)
 
 }
 
+ssize_t write_file(int fp, void *p, size_t size)
+{
+	int flag;
+	fd_set rfds;
+	struct timeval tv;
+	ssize_t sz;
+	uint8_t *buff = (uint8_t*)p;
+	union FBFrame fm;
+	int flags;
+
+	tv.tv_sec = 0;
+	tv.tv_usec = 100000;
+
+	flags = fcntl(fp, F_GETFL);
+	flags |= O_NONBLOCK;
+        if (fcntl(fp, F_SETFL, flags)) {
+		printf("fctl failure\n");
+		return -1;
+	}
+
+	FD_ZERO(&rfds);
+	FD_SET(fp, &rfds);
+
+	while(size > 0)
+	{
+		sz = write(fp, buff, size);
+
+		if(sz == -1) {
+			if (errno == EAGAIN)
+				sz = 0;
+			else
+				return -1;
+		}
+
+		buff += sz;
+		size -= sz;
+		fm.key = INFO;
+		send_data(&fm, 4);
+		select(fp+1, NULL, &rfds, NULL, &tv);
+	}
+
+	if(size == 0)
+		return buff - (uint8_t*)p;
+	else
+		return -1;
+}
+
 int handle_cmd(const char *cmd)
 {
 	int pid;
@@ -318,14 +365,21 @@ int handle_cmd(const char *cmd)
 
 	} else 	if(strncmp(cmd, "ACmd:", 5) == 0) {
                 printf("run shell cmd: %s\n", cmd + 5);
-		g_pid = popen2(cmd + 6, &g_stdin, &g_stdout);
+		g_pid = popen2(cmd + 5, &g_stdin, &g_stdout);
 		if (g_pid < 0) {
                         printf("Failure excecu cmd: %s\n", cmd+6);
                         memset(&fm, 0, sizeof(fm));
                         fm.key = FAIL;
                         strcpy(fm.data, "Failure to folk process");
 		}
-		fm.key = OKAY;
+		usleep(50000);
+		p = waitpid(g_pid, &pstat, WNOHANG);
+		if( p > 0)
+			fm.key = WEXITSTATUS (pstat) ? FAIL : OKAY;
+		else if(p == 0)
+			fm.key = OKAY;
+		else
+			fm.key = FAIL;
 		g_open_file = g_stdin;
 		send_data(&fm, 4);
 
@@ -438,7 +492,7 @@ int handle_cmd(const char *cmd)
 		if(read(g_ep_source, p, size) < 0)
 			fm.key = FAIL;
 
-		if(write(g_open_file, p, size) < 0)
+		if(write_file(g_open_file, p, size) < 0)
 			fm.key = FAIL;
 
 		free(p);
@@ -550,8 +604,10 @@ int main(int argc, char **argv)
 		char buff[65];
 		memset(buff, 0, 65);
 		r = read(g_ep_source, buff, 65);
-		if(r<0) printf("failure read command from usb ep point\n");
-		handle_cmd(buff);
+		if(r < 0)
+			printf("failure read command from usb ep point\n");
+		if(r > 0)
+			handle_cmd(buff);
 	}
 
 	return 0;

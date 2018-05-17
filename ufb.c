@@ -46,6 +46,11 @@ struct usb_fs_desc{
 	} __attribute__((packed)) ss_descs;
 	struct usb_os_desc_header os_header;
 	struct usb_ext_compat_desc os_desc;
+	struct usb_os_desc_header os_ext_header;
+	struct usb_ext_prop_desc  os_ext_desc;
+	uint8_t property_name[20];
+	__le32  property_data_len;
+	uint8_t property_data[39];
 };
 
 #define STR_INTERFACE_ "utp"
@@ -162,7 +167,7 @@ static const struct usb_fs_desc g_descriptors = {
 			.bDescriptorType = USB_DT_SS_ENDPOINT_COMP,
 		},
         },
-	.os_count = cpu_to_le32(1),
+	.os_count = cpu_to_le32(2),
 	.os_header = {
 		.interface = cpu_to_le32(1),
 		.dwLength = cpu_to_le32(sizeof(g_descriptors.os_header)
@@ -179,6 +184,28 @@ static const struct usb_fs_desc g_descriptors = {
 		.SubCompatibleID = {0},
 		.Reserved2 = {0},
 	},
+	.os_ext_header = {
+		.interface = cpu_to_le32(0),
+		.dwLength = cpu_to_le32(sizeof(g_descriptors.os_header)
+					+sizeof(g_descriptors.os_ext_desc)
+					+sizeof(g_descriptors.property_name)
+					+sizeof(g_descriptors.property_data_len)
+					+sizeof(g_descriptors.property_data)),
+		.bcdVersion = cpu_to_le32(1),
+		.wIndex = cpu_to_le32(5),
+		.wCount = 1,
+	},
+	.os_ext_desc = {
+		.dwSize = cpu_to_le32(sizeof(g_descriptors.os_ext_desc)
+					+sizeof(g_descriptors.property_name)
+					+sizeof(g_descriptors.property_data_len)
+					+sizeof(g_descriptors.property_data)),
+		.dwPropertyDataType = 1,
+		.wPropertyNameLength = sizeof(g_descriptors.property_name),
+	},
+	.property_name = "DeviceInterfaceGUID",
+	.property_data_len = sizeof(g_descriptors.property_data),
+	.property_data = "{4866319A-F4D6-4374-93B9-DC2DEB361BA9}",
 };
 
 pid_t popen2(const char *command, int *infp, int *outfp)

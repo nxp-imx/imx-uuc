@@ -29,7 +29,7 @@ function launch_uuc() {
 	mkdir /sys/kernel/config/usb_gadget/$1
 	cd /sys/kernel/config/usb_gadget/$1
 	echo 0x066F > idVendor
-	echo 0x9AFF > idProduct
+	echo 0x9BFF > idProduct
 	mkdir strings/0x409
 
 	if [ -e /sys/devices/soc0/soc_uid ]; then

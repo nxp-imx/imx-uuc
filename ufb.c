@@ -408,7 +408,16 @@ int handle_cmd(const char *cmd)
 		else
 			fm.key = FAIL;
 		g_open_file = g_stdin;
+
+		flags = fcntl(g_stdout, F_GETFL);
+		flags |= O_NONBLOCK;
+
 		send_data(&fm, 4);
+
+		if (fcntl(g_stdout, F_SETFL, flags)) {
+			printf("fctl failure\n");
+			return -1;
+		}
 
 	} else if(strncmp(cmd, "Sync", 4) == 0) {
 		printf("wait for async proccess finish\n");
@@ -416,7 +425,7 @@ int handle_cmd(const char *cmd)
 		FD_SET(g_stdout, &rfds);
 		do {
 			int retval;
-			p = waitpid(pid, &pstat, WNOHANG);
+			p = waitpid(g_pid, &pstat, WNOHANG);
 			if(g_stdout >= 0) {
 				retval = select(g_stdout + 1, &rfds, NULL, NULL, &tv);
 				do {
@@ -628,9 +637,9 @@ int main(int argc, char **argv)
 	printf("Start handle command\n");
 	while(1) {
 		int r;
-		char buff[65];
-		memset(buff, 0, 65);
-		r = read(g_ep_source, buff, 65);
+		char buff[512];
+		memset(buff, 0, 512);
+		r = read(g_ep_source, buff, 511);
 		if(r < 0)
 			printf("failure read command from usb ep point\n");
 		if(r > 0)

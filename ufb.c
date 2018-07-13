@@ -20,10 +20,10 @@
 #define READ 0
 #define WRITE 1
 
-#define cpu_to_le16(x)  htole16(x)
-#define cpu_to_le32(x)  htole32(x)
-#define le32_to_cpu(x)  le32toh(x)
-#define le16_to_cpu(x)  le16toh(x)
+#define cpu_to_le16(x)  (x)
+#define cpu_to_le32(x)  (x)
+#define le32_to_cpu(x)  (x)
+#define le16_to_cpu(x)  (x)
 
 #pragma pack(1)
 struct usb_fs_desc{

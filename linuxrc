@@ -16,6 +16,18 @@ last=0;
 
 UDC_DIR=/sys/class/udc
 
+function launch_dhcpd() {
+
+	touch -f /var/lib/misc/udhcpd.leases
+	echo start	168.1.1.50 > /conf
+	echo end	168.1.1.253 >> /conf
+	echo interface usb$1 	>>/conf
+
+	ifconfig usb$1 168.1.1.1
+	udhcpd /conf
+
+}
+
 function contains() {
 	for i in "${files[@]}"
 	do
@@ -79,6 +91,8 @@ function launch_uuc() {
 		fi
 
 		touch /find_one
+
+		launch_dhcpd $2
 
 		remote=""
 		while [[ "$remote" == "" ]];

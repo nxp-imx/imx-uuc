@@ -6,6 +6,8 @@ mount -t proc none /proc
 mount -t devtmpfs none /dev
 mount -t configfs none /sys/kernel/config
 
+cmdline=`cat /proc/cmdline`
+
 # disable turn off display
 echo -e "\033[9;0]" > /dev/tty0
 
@@ -29,7 +31,13 @@ function launch_uuc() {
 	mkdir /sys/kernel/config/usb_gadget/$1
 	cd /sys/kernel/config/usb_gadget/$1
 	echo 0x066F > idVendor
-	echo 0x9BFF > idProduct
+
+	if [[ ${cmdline} == *nfsroot* ]]; then
+		echo 0x9CFF > idProduct
+	else
+		echo 0x9BFF > idProduct
+	fi
+
 	mkdir strings/0x409
 
 	if [ -e /sys/devices/soc0/soc_uid ]; then
@@ -48,36 +56,85 @@ function launch_uuc() {
 	echo "MSFT100" > os_desc/qw_sign
 	echo 0x40 > os_desc/b_vendor_code
 
-	mkdir functions/ffs.utp$2
-	mkdir /dev/usb-utp$2
-	mount -t functionfs utp$2 /dev/usb-utp$2
-	ln -s functions/ffs.utp$2 configs/c.1/
-	ln -s configs/c.1 os_desc
+	if [[ ${cmdline} == *nfsroot* ]]; then
+		mkdir functions/ncm.1
+		ln -s functions/ncm.1 configs/c.1/
+#		mkdir functions/acm.1
+#		ln -s functions/acm.1 configs/c.1/
+		echo $1 > UDC
 
-	mkdir functions/mass_storage.1
-	ln -s functions/mass_storage.1 configs/c.1/
-	echo /fat > functions/mass_storage.1/lun.0/file
+		echo "Start config network"
 
-	ufb /dev/usb-utp$2/ep0 &
+                ifconfig usb$2 up
+                while [ ! -e /find_one ]
+                do
+                        if [[ `ifconfig usb$2` == *inet6* ]]; then
+				break;
+			fi
+			sleep 1
+                done
 
-	echo run utp at /dev/usb-utp$2/ep0;
-	while [ ! -e /dev/usb-utp$2/ep1 ]
-	do
-		echo "."
-		sleep 1;
-	done
+		if [ -e /find_one ]; then
+			exit 0
+		fi
 
-	echo $1 > UDC
+		touch /find_one
 
-	cd /home
-	echo "Start UTP at $1"
-	if [ $2 == "0" ]; then
-		echo uuc /dev/utp
-		uuc /dev/utp
+		remote=""
+		while [[ "$remote" == "" ]];
+		do
+			sleep 2
+			echo retry get remote ipaddress
+			ping6 -c2 -I usb$2 ff02::1
+
+			remote=`ip -6 neighbor show dev usb$2`
+			remote=(${remote})
+			remote=${remote[0]}
+		done
+
+                nfs=${cmdline#*nfsroot=}
+                nfs=($nfs)
+                nfs=${nfs[0]}
+
+                echo ${remote} ${nfs}
+                mount -t nfs [${remote}%usb$2]:${nfsroot}/${nfs} /mnt/
+                cd /
+
+		touch /exit_scan
+
 	else
-		echo uuc /dev/utp$2
-		uuc /dev/utp$2
+		mkdir functions/ffs.utp$2
+		mkdir /dev/usb-utp$2
+		mount -t functionfs utp$2 /dev/usb-utp$2
+		ln -s functions/ffs.utp$2 configs/c.1/
+		ln -s configs/c.1 os_desc
+
+		mkdir functions/mass_storage.1
+		ln -s functions/mass_storage.1 configs/c.1/
+		echo /fat > functions/mass_storage.1/lun.0/file
+
+		ufb /dev/usb-utp$2/ep0 &
+
+		echo run utp at /dev/usb-utp$2/ep0;
+		while [ ! -e /dev/usb-utp$2/ep1 ]
+		do
+			echo "."
+			sleep 1;
+		done
+
+		echo $1 > UDC
+
+		if [ $2 == "0" ]; then
+			echo uuc /dev/utp
+			uuc /dev/utp &
+		else
+			echo uuc /dev/utp$2
+			uuc /dev/utp$2 &
+		fi
 	fi
+
+	return 0;
+
 }
 
 while true; do
@@ -90,13 +147,22 @@ if test "$(ls -A "$UDC_DIR")"; then
 			id=$last;
 			last=`expr $last + 1`;
 			echo "Found New UDC: $entry";
-			launch_uuc $entry $id&
+			launch_uuc $entry $id &
 		fi
+
 	done
 	sleep 1
 else
 	echo "No udc Available!"
 	sleep 30
 fi
+
+if [ -e /exit_scan ]; then
+	echo find one active ncm
+	exec switch_root /mnt /sbin/init
+        exit 1;
+fi
+
 done
 
+echo bye

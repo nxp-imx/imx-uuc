@@ -466,7 +466,8 @@ int handle_cmd(const char *cmd)
 					sprintf(fm.data, "%s", "DIR");
 					rs = 7;
 				} else {
-					g_open_file = open(file, O_WRONLY | O_CREAT);
+					g_open_file = open(file, O_WRONLY | O_CREAT,
+						S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
 				}
 			}
 		}

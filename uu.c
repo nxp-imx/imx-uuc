@@ -37,6 +37,8 @@
 #include <pthread.h>
 #include <linux/reboot.h>
 #include <sys/reboot.h>
+#include <sys/sysmacros.h>
+
 /* mxc SoC will enable watchdog at USB recovery mode
  * so, the user must service watchdog
  */

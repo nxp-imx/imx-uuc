@@ -490,7 +490,7 @@ int handle_cmd(const char *cmd)
 			memset(&st, 0, sizeof(st));
 			stat(file, &st);
 			size = st.st_size;
-			sprintf(fm.data, "%016lX", size);
+			sprintf(fm.data, "%016zX", size);
 			rz = 4 + strlen(fm.data);
 		}
 

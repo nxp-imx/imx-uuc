@@ -305,7 +305,8 @@ int main(int argc, char *argv[])
 	}
 
 	if (verbose > 1) {
-		printf("Firmware size: %ld bytes, %ld sectors\n", fw_stat.st_size, SECTOR_COUNT(fw_stat.st_size));
+		printf("Firmware size: %lld bytes, %lld sectors\n",
+		       (long long int)fw_stat.st_size, (long long int)SECTOR_COUNT(fw_stat.st_size));
 	}
 
 	/* open target device and read MBR with partition table */

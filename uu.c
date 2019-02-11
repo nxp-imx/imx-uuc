@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/sysmacros.h>
 #include <sys/ioctl.h>
 #include <string.h>
 #include <malloc.h>
@@ -55,7 +56,7 @@
 #pragma pack(1)
 
 #define PACKAGE "uuc"
-#define VERSION "0.5"
+#define VERSION "0.6"
 
 char *utp_firmware_version = "2.6.31";
 char *utp_sn = "000000000000";

@@ -315,7 +315,7 @@ ssize_t write_file(int fp, void *p, size_t size)
 			if (errno == EAGAIN)
 				sz = 0;
 			else
-				return -1;
+				return -errno;
 		}
 
 		buff += sz;
@@ -509,8 +509,8 @@ int handle_cmd(const char *cmd)
 	} else if(strncmp(cmd, "donwload:", 9) == 0) {
 		uint32_t size;
 		ssize_t rs;
-
-		fm.key = OKAY;
+		uint32_t key = OKAY;
+		int ret = 0;
 
 		size = strtoul(cmd + 9, NULL, 16);
 
@@ -527,10 +527,11 @@ int handle_cmd(const char *cmd)
 		send_data(&fm, 4 + strlen(fm.data));
 
 		if(read(g_ep_source, p, size) < 0)
-			fm.key = FAIL;
+			key = FAIL;
 
-		if(write_file(g_open_file, p, size) < 0)
-			fm.key = FAIL;
+		ret = write_file(g_open_file, p, size);
+		if (ret < 0)
+			key = FAIL;
 
 		free(p);
 
@@ -548,8 +549,13 @@ int handle_cmd(const char *cmd)
 				send_data(&fm, rs + 4);
 			}
 		}
-		fm.key = OKAY;
-		send_data(&fm, 4);
+		fm.key = key;
+		if (ret == -EPIPE) {
+			strcpy(fm.data, "EPIPE");
+			send_data(&fm, 4 + strlen("EPIPE"));
+		} else {
+			send_data(&fm, 4);
+		}
 
 	} else if(strncmp(cmd, "upload", 6) == 0) {
 		int max = 0x10000;
@@ -610,6 +616,8 @@ int main(int argc, char **argv)
 
 	char file[] = "/dev/usb-ffs/ep0";
 	char *usb_file = file;
+
+	signal(SIGPIPE, SIG_IGN);
 
         if (argc > 1)
                 usb_file = argv[1];

@@ -566,18 +566,29 @@ int handle_cmd(const char *cmd)
 			fm.key = FAIL;
 			send_data(&fm, 4);
 		} else {
+			do {
 			ret = read(g_open_file, p, max);
-			if(ret < 0) {
-				fm.key = FAIL;
-				send_data(&fm, 4);
-			} else {
-				fm.key = DATA;
-				sprintf(fm.data, "%08X", ret);
-				send_data(&fm, 12);
-				send_data(p, ret);
-				fm.key = OKAY;
-				send_data(&fm, 4);
-			}
+				if(ret < 0) {
+					if( errno == EAGAIN) {
+						//retry read
+						fm.key = DATA;
+						sprintf(fm.data, "%08X", 0);
+						send_data(&fm, 12);
+					} else {
+						fm.key = FAIL;
+						send_data(&fm, 4);
+						break;
+					}
+				} else {
+					fm.key = DATA;
+					sprintf(fm.data, "%08X", ret);
+					send_data(&fm, 12);
+					send_data(p, ret);
+					fm.key = OKAY;
+					send_data(&fm, 4);
+					break;
+				}
+			} while (1);
 		}
 		free(p);
 	} else {

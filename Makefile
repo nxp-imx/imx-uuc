@@ -1,7 +1,8 @@
-CC ?= $(CROSS_COMPILE)gcc
+CC = $(CROSS_COMPILE)gcc
 BINDIR ?= /usr/bin
 PROGRAMS = uuc sdimage ufb
 LIBS ?= -lpthread
+CFLAGS += -static
 
 all: $(PROGRAMS)
 

@@ -110,13 +110,11 @@ function launch_uuc() {
                 nfs=($nfs)
                 nfs=${nfs[0]}
 
+		nfs=${nfs##*:}
+
                 echo ${remote} ${nfs}
 
-		if [[ ${nfs} == *:* ]]; then
-			mount -t nfs ${nfs} /mnt/
-		else
-			mount -t nfs [${remote}%usb$2]:${nfsroot}/${nfs} /mnt/
-		fi
+		mount -t nfs [${remote}%usb$2]:${nfsroot}/${nfs} /mnt/
 
                 cd /
 

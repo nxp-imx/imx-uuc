@@ -127,10 +127,6 @@ function launch_uuc() {
 		ln -s functions/ffs.utp$2 configs/c.1/
 		ln -s configs/c.1 os_desc
 
-		mkdir functions/mass_storage.1
-		ln -s functions/mass_storage.1 configs/c.1/
-		echo /fat > functions/mass_storage.1/lun.0/file
-
 		ufb /dev/usb-utp$2/ep0 &
 
 		echo run utp at /dev/usb-utp$2/ep0;
@@ -142,13 +138,6 @@ function launch_uuc() {
 
 		echo $1 > UDC
 
-		if [ $2 == "0" ]; then
-			echo uuc /dev/utp
-			uuc /dev/utp &
-		else
-			echo uuc /dev/utp$2
-			uuc /dev/utp$2 &
-		fi
 	fi
 
 	return 0;

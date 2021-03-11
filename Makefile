@@ -1,6 +1,6 @@
 CC ?= $(CROSS_COMPILE)gcc
 BINDIR ?= /usr/bin
-PROGRAMS = uuc sdimage ufb
+PROGRAMS = sdimage ufb
 LIBS ?= -lpthread
 
 all: $(PROGRAMS)

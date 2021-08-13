@@ -161,7 +161,7 @@ if test "$(ls -A "$UDC_DIR")"; then
 	sleep 1
 else
 	echo "No udc Available!"
-	sleep 30
+	sleep 5
 fi
 
 if [ -e /exit_scan ]; then

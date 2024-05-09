@@ -275,6 +275,11 @@ int g_ep_source = -1;
 int g_ep_0 = -1;
 int g_open_file = -1;
 
+size_t round_up_to_cache_line(size_t size)
+{
+	return (size + 0x7f) & ~0x7f;
+}
+
 int send_data(void *p, size_t size)
 {
 	int r;
@@ -514,7 +519,7 @@ int handle_cmd(const char *cmd)
 
 		size = strtoul(cmd + 9, NULL, 16);
 
-		void *p = malloc(size);
+		void *p = malloc(round_up_to_cache_line(size));
 		if(p) {
 			fm.key = DATA;
 		} else {
@@ -526,10 +531,16 @@ int handle_cmd(const char *cmd)
 		sprintf(fm.data, "%08X", size);
 		send_data(&fm, 4 + strlen(fm.data));
 
-		if(read(g_ep_source, p, size) < 0)
+		/* workaround for chipidea usb driver sg alignment issue */
+		if((rs = read(g_ep_source, p, round_up_to_cache_line(size))) < 0)
 			key = FAIL;
 
-		ret = write_file(g_open_file, p, size);
+		if(rs != size) {
+			printf("read size %ld != %d\n", rs, size);
+			key = FAIL;
+		}
+
+		ret = write_file(g_open_file, p, rs);
 		if (ret < 0)
 			key = FAIL;
 

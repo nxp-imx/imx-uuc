@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Mfgtools (UUU) kernel side daemon
+ *
+ * Copyright (C) 2024 NXP
+ * Author: Frank Li <Frank.Li@nxp.com>
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>

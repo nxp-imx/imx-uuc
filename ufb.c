@@ -265,7 +265,7 @@ union FBFrame{
 	uint8_t raw[MAX_FRAME_SIZE];
 	struct {
 		uint32_t key;
-		uint8_t  data[MAX_FRAME_SIZE - sizeof(uint32_t)];
+		char     data[MAX_FRAME_SIZE - sizeof(uint32_t)];
 	};
 };
 
@@ -287,7 +287,7 @@ size_t round_up_to_cache_line(size_t size)
 	return (size + 0x7f) & ~0x7f;
 }
 
-int send_data(void *p, size_t size)
+void send_data(void *p, size_t size)
 {
 	int r;
 	r = write(g_ep_sink, p, size);
@@ -297,7 +297,6 @@ int send_data(void *p, size_t size)
 
 ssize_t write_file(int fp, void *p, size_t size)
 {
-	int flag;
 	fd_set rfds;
 	struct timeval tv;
 	ssize_t sz;
@@ -346,7 +345,6 @@ int handle_cmd(const char *cmd)
 {
 	int pid;
 	int out;
-	int in;
 	union FBFrame fm;
 	int size;
 	int p;
@@ -380,9 +378,8 @@ int handle_cmd(const char *cmd)
 		FD_ZERO(&rfds);
 		FD_SET(out, &rfds);
 		do {
-			int retval;
 			p = waitpid(pid, &pstat, WNOHANG);
-			retval = select(out + 1, &rfds, NULL, NULL, &tv);
+			select(out + 1, &rfds, NULL, NULL, &tv);
 			do {
 				size = read(out, fm.data, MAX_FRAME_DATA_SIZE);
 				if (size >= 0) {
@@ -435,10 +432,9 @@ int handle_cmd(const char *cmd)
 		FD_ZERO(&rfds);
 		FD_SET(g_stdout, &rfds);
 		do {
-			int retval;
 			p = waitpid(g_pid, &pstat, WNOHANG);
 			if (g_stdout >= 0) {
-				retval = select(g_stdout + 1, &rfds, NULL, NULL, &tv);
+				select(g_stdout + 1, &rfds, NULL, NULL, &tv);
 				do {
 					size = read(g_stdout, fm.data, MAX_FRAME_DATA_SIZE);
 					if (size >= 0) {
@@ -611,10 +607,12 @@ int handle_cmd(const char *cmd)
 	} else {
 		printf("Unknow Cmd %s\n", cmd);
 	}
+
+	return 0;
 }
 
 
-int init_usb_fs()
+void init_usb_fs()
 {
 	ssize_t ret;
 
@@ -637,9 +635,6 @@ int init_usb_fs()
 
 int main(int argc, char **argv)
 {
-	int outfp;
-	int infp;
-
 	printf("%s %s [built %s %s]\n", PACKAGE, VERSION, __DATE__, __TIME__);
 
 	char file[] = "/dev/usb-ffs/ep0";

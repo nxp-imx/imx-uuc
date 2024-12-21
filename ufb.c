@@ -538,7 +538,7 @@ int handle_cmd(const char *cmd)
 			key = FAIL;
 
 		if (rs != size) {
-			printf("read size %ld != %d\n", rs, size);
+			printf("read size %zd != %d\n", rs, size);
 			key = FAIL;
 		}
 

@@ -179,7 +179,7 @@ static const struct usb_fs_desc g_descriptors = {
 		.interface = cpu_to_le32(1),
 		.dwLength = cpu_to_le32(sizeof(g_descriptors.os_header)
 		                        + sizeof(g_descriptors.os_desc)),
-		.bcdVersion = cpu_to_le32(1),
+		.bcdVersion = cpu_to_le32(0x0100),
 		.wIndex = cpu_to_le32(4),
 		.bCount = cpu_to_le32(1),
 		.Reserved = cpu_to_le32(0),
@@ -198,7 +198,7 @@ static const struct usb_fs_desc g_descriptors = {
 		                        + sizeof(g_descriptors.property_name)
 		                        + sizeof(g_descriptors.property_data_len)
 		                        + sizeof(g_descriptors.property_data)),
-		.bcdVersion = cpu_to_le32(1),
+		.bcdVersion = cpu_to_le32(0x0100),
 		.wIndex = cpu_to_le32(5),
 		.wCount = 1,
 	},

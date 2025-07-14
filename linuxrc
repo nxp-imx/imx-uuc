@@ -144,6 +144,40 @@ function launch_uuc() {
 
 }
 
+function launch_crrm() {
+	if [[ ${cmdline} == *crrm_server* ]]; then
+		server=${cmdline#*crrm_server=}
+		server=($server)
+		server=${server[0]}
+
+		udhcpc -i eth1
+		echo "Start tftp download"
+		tftp -g -r flash.bin ${server}
+
+		if [ -e /flash.bin ]; then
+
+			mkdir /mnt/emmc_fat
+			mount -t vfat /dev/mmcblk0p1 /mnt/emmc_fat
+
+			mv /flash.bin /mnt/emmc_fat/flash_install.bin
+			sync
+			umount /mnt/emmc_fat
+
+			echo "CRRM download finished"
+			ele_crrm_test -r
+	else
+			echo "Fail to download flash.bin"
+	fi
+
+		echo "Exit to shell"
+		/bin/sh
+	fi
+
+	return 0
+}
+
+launch_crrm
+
 while true; do
 if test "$(ls -A "$UDC_DIR")"; then
 	cd $UDC_DIR

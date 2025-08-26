@@ -1,0 +1,35 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2025-08-24T08:12:29Z",
+    "creators": [
+      "Organization: NXP"
+    ],
+    "licenseListVersion": "3.20"
+  },
+  "name": "imx-uuc-LF_6.12.34_2.1.0",
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://nxp.com/spdx/f0a83dcc-b7f1-450e-a3fe-2ef4fc0a38f6",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-package-f0a83dcc-b7f1-450e-a3fe-2ef4fc0a38f6",
+      "name": "imx-uuc",
+      "versionInfo": "LF_6.12.34_2.1.0",
+      "licenseConcluded": "(GPL-2.0-only)",
+      "licenseDeclared": "(GPL-2.0-only)",
+      "downloadLocation": "https://github.com/nxp-imx/imx-uuc -b master",
+      "originator": "Organization: NXP",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-package-f0a83dcc-b7f1-450e-a3fe-2ef4fc0a38f6"
+    }
+  ]
+}

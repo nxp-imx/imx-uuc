@@ -259,6 +259,14 @@ pid_t popen2(const char *command, int *infp, int *outfp)
 	return pid;
 }
 
+/*
+ * The i.MX ChipIdea device controller limits one USB request to 16KB
+ * (CI_MAX_REQ_SIZE in the kernel). A larger write() on the FunctionFS bulk-IN
+ * endpoint fails with -EMSGSIZE. The host reads whatever size the DATA header
+ * announces, so this limit is needed on the target side only.
+ */
+#define UPLOAD_MAX_CHUNK 0x4000
+
 #define MAX_FRAME_SIZE 64
 #define MAX_FRAME_DATA_SIZE 60
 union FBFrame{
@@ -571,7 +579,7 @@ int handle_cmd(const char *cmd)
 		}
 
 	} else if (strncmp(cmd, "upload", 6) == 0) {
-		int max = 0x10000;
+		int max = UPLOAD_MAX_CHUNK;
 		void * p = malloc(max);
 		printf(".");
 		int ret  = 0;
